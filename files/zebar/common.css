@@ -1,0 +1,72 @@
+@font-face {
+  font-family: 'Space Grotesk';
+  src: url('./SpaceGrotesk.ttf') format('truetype');
+  font-weight: 300 700;
+}
+
+:root {
+  /* значения по умолчанию; настоящие приходят из theme.json (их пишет ryoku.py) */
+  --fg: #f3e9e4;
+  --muted: #b9aaa4;
+  --accent: #ffb3b5;
+  --accent2: #e6c18d;
+  --accent3: #e6bdbd;
+  --glow: #ffe9e9;
+  --pill: #16110f;
+  --line: rgba(255, 255, 255, 0.09);
+}
+
+* { box-sizing: border-box; margin: 0; padding: 0; }
+
+html, body {
+  background: transparent;
+  overflow: hidden;
+  user-select: none;
+  cursor: default;
+  font-family: 'Space Grotesk', 'Segoe UI Variable Text', 'Segoe UI', sans-serif;
+  color: var(--fg);
+  font-variant-numeric: tabular-nums;
+  -webkit-font-smoothing: antialiased;
+  transition: color 0.6s;
+}
+
+.shadow { text-shadow: 0 1px 10px rgba(0, 0, 0, 0.28); }
+
+/* окантовка выделенного виджета и квадратик для изменения размера */
+.frame, .grip { position: fixed; pointer-events: none; opacity: 0; transition: opacity 0.15s; }
+.frame {
+  inset: 1px;
+  border: 2px dashed var(--accent); border-radius: 12px;
+  background: color-mix(in srgb, var(--accent) 8%, transparent);
+}
+.grip {
+  right: 0; bottom: 0; width: 16px; height: 16px;
+  background: var(--accent); border: 2px solid var(--pill); border-radius: 4px;
+  box-shadow: 0 0 0 1px var(--accent);
+}
+/* шестерёнка в правом верхнем углу рамки: открывает настройки этого виджета */
+.gear {
+  position: fixed; pointer-events: none; opacity: 0; transition: opacity 0.15s;
+  right: 0; top: 0; width: 24px; height: 24px; border-radius: 7px;
+  background: var(--accent); color: var(--pill); border: 2px solid var(--pill);
+  box-shadow: 0 0 0 1px var(--accent);
+  font-family: 'Segoe Fluent Icons', 'Segoe MDL2 Assets'; font-size: 12px; line-height: 20px; text-align: center;
+}
+html.selected .frame, html.selected .grip, html.selected .gear { opacity: 1; }
+
+/* Стекло: общая подложка карточек. Слои снизу вверх: размытые обои (совмещены с экраном в common.js),
+   затемнение в цвет темы, блик по диагонали. Сверху светлая кромка и мягкая тень. */
+.card-bg {
+  background-color: var(--pill);
+  background-image:
+    linear-gradient(135deg, rgba(255, 255, 255, 0.20) 0%, rgba(255, 255, 255, 0.04) 42%, rgba(0, 0, 0, 0.10) 100%),
+    linear-gradient(var(--glass, rgba(12, 8, 10, 0.46)), var(--glass, rgba(12, 8, 10, 0.46))),
+    var(--wall-img, none);
+  background-repeat: no-repeat;
+  background-origin: border-box;
+  background-size: auto, auto, var(--wall-size, cover);
+  background-position: 0 0, 0 0, var(--wall-x, 0) var(--wall-y, 0);
+  border: 1px solid var(--edge, rgba(255, 255, 255, 0.24));
+  border-radius: 18px;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.30), inset 0 1px 0 rgba(255, 255, 255, 0.28);
+}

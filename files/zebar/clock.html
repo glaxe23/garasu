@@ -1,0 +1,131 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8" />
+<link rel="stylesheet" href="./common.css" />
+<style>
+  .v { display: none; opacity: var(--opacity, 0.86); transition: opacity 0.3s; }
+  body[data-style="line"] .line, body[data-style="stack"] .stack, body[data-style="analog"] .analog { display: flex; }
+
+  /* 1. В строку: «07:06 – 16/11» */
+  .line { align-items: baseline; gap: 26px; color: var(--glow); font-weight: 700; line-height: 1; white-space: nowrap;
+          letter-spacing: -3px; padding-top: 8px; width: fit-content; }
+  .line .big { font-size: 132px; font-variant-numeric: normal; }   /* обычная «1» без тяжёлой подставки */
+  .line .dash { font-size: 110px; font-weight: 500; opacity: 0.85; }
+  .line .small { font-size: 34px; letter-spacing: 0; font-weight: 600; opacity: 0.8; margin-left: -12px; }
+
+  /* 2. Стопкой: часы над минутами, справа день недели и дата */
+  .stack { align-items: center; gap: 22px; padding: 6px 0 0 4px; width: fit-content; }
+  .stack .nums { font-variant-numeric: normal; font-weight: 700; font-size: 168px; line-height: 0.84; letter-spacing: -6px; color: var(--glow); }
+  .stack .mm { color: var(--accent); }
+  .stack .side { display: flex; flex-direction: column; gap: 6px; padding-top: 8px; }
+  .stack .wd { font: 700 15px 'Segoe UI Variable Text', 'Segoe UI', sans-serif; letter-spacing: 4px; text-transform: uppercase; color: var(--accent); }
+  .stack .dt { font: 600 24px 'Segoe UI Variable Text', 'Segoe UI', sans-serif; color: var(--fg); white-space: nowrap; }
+  .stack .sc { font-weight: 600; font-size: 22px; color: var(--muted); margin-top: 6px; text-shadow: none; }
+
+  /* 3. Стрелки: стеклянный циферблат */
+  .analog { flex-direction: column; align-items: center; gap: 8px; width: 296px; padding: 2px; }
+  .face { width: 280px; height: 280px; border-radius: 50% !important; position: relative; }
+  .face svg { position: absolute; inset: 0; width: 100%; height: 100%; }
+  .tick { stroke: var(--fg); stroke-width: 2; opacity: 0.45; stroke-linecap: round; }
+  .tick.q { stroke-width: 4; opacity: 0.9; }
+  .hand { stroke-linecap: round; transition: transform 0.4s cubic-bezier(0.4, 2.2, 0.6, 1); transform-origin: 140px 140px; }
+  .hh { stroke: var(--fg); stroke-width: 7; }
+  .mn { stroke: var(--glow); stroke-width: 5; }
+  .ss { stroke: var(--accent); stroke-width: 2; }
+  .pin { fill: var(--accent); }
+  .analog .cap { font: 600 15px 'Segoe UI Variable Text', 'Segoe UI', sans-serif; color: var(--fg); }
+</style>
+</head>
+<body data-widget="clock" data-w="1100" data-style="line">
+<div class="v line shadow">
+  <span class="big" id="l-time">--:--</span>
+  <span class="small" id="l-sec"></span>
+  <span class="dash" id="l-dash">–</span>
+  <span class="big" id="l-date">--/--</span>
+</div>
+
+<div class="v stack shadow">
+  <div class="nums"><div id="s-hh">--</div><div class="mm" id="s-mm">--</div></div>
+  <div class="side">
+    <div class="wd" id="s-wd"></div>
+    <div class="dt" id="s-dt"></div>
+    <div class="sc" id="s-sc"></div>
+  </div>
+</div>
+
+<div class="v analog">
+  <div class="face card-bg">
+    <svg viewBox="0 0 280 280" id="svg">
+      <line class="hand hh" id="a-h" x1="140" y1="140" x2="140" y2="74" />
+      <line class="hand mn" id="a-m" x1="140" y1="140" x2="140" y2="42" />
+      <line class="hand ss" id="a-s" x1="140" y1="158" x2="140" y2="34" />
+      <circle class="pin" cx="140" cy="140" r="6" />
+    </svg>
+  </div>
+  <div class="cap shadow" id="a-cap"></div>
+</div>
+
+<script type="module">
+  import { show, setBase } from './common.js';
+  // Три вида часов; вид выбирается в настройках виджета. У каждого свой размер окна (см. widgets.py, sizes).
+  const WIDTH = { line: 1100, stack: 430, analog: 300 };
+  const DAYS = ['воскресенье', 'понедельник', 'вторник', 'среда', 'четверг', 'пятница', 'суббота'];
+  const GEN = ['января', 'февраля', 'марта', 'апреля', 'мая', 'июня', 'июля', 'августа', 'сентября', 'октября', 'ноября', 'декабря'];
+  let cfg = { style: 'line', seconds: true, date: true, h12: false };
+  const $ = id => document.getElementById(id), p = n => String(n).padStart(2, '0');
+
+  // деления циферблата
+  const svg = $('svg');
+  for (let i = 0; i < 60; i += 5) {
+    const l = document.createElementNS('http://www.w3.org/2000/svg', 'line'), q = i % 15 === 0;
+    l.setAttribute('class', 'tick' + (q ? ' q' : ''));
+    l.setAttribute('x1', 140); l.setAttribute('x2', 140); l.setAttribute('y1', 14); l.setAttribute('y2', q ? 30 : 24);
+    l.setAttribute('transform', 'rotate(' + i * 6 + ' 140 140)');
+    svg.insertBefore(l, svg.firstChild);
+  }
+  let turns = { h: 0, m: 0, s: 0 }, lastDeg = { h: 0, m: 0, s: 0 };
+  function turn(id, key, deg) {                     // стрелка не прыгает назад при переходе через 12
+    if (deg < lastDeg[key] - 180) turns[key]++;
+    lastDeg[key] = deg;
+    $(id).style.transform = 'rotate(' + (turns[key] * 360 + deg) + 'deg)';
+  }
+
+  function tick() {
+    const d = new Date(), H = d.getHours(), M = d.getMinutes(), S = d.getSeconds();
+    let h = H, tail = '';
+    if (cfg.h12) { tail = H < 12 ? 'AM' : 'PM'; h = H % 12 || 12; }
+    const sec = [cfg.seconds ? p(S) : '', tail].filter(Boolean).join(' ');
+    if (cfg.style === 'stack') {
+      $('s-hh').textContent = p(h); $('s-mm').textContent = p(M);
+      $('s-wd').textContent = DAYS[d.getDay()];
+      $('s-dt').textContent = d.getDate() + ' ' + GEN[d.getMonth()];
+      $('s-sc').textContent = sec;
+    } else if (cfg.style === 'analog') {
+      turn('a-h', 'h', (H % 12) * 30 + M / 2);
+      turn('a-m', 'm', M * 6 + S / 10);
+      turn('a-s', 's', S * 6);
+      $('a-cap').textContent = DAYS[d.getDay()] + ', ' + d.getDate() + ' ' + GEN[d.getMonth()];
+    } else {
+      $('l-time').textContent = p(h) + ':' + p(M);
+      $('l-sec').textContent = sec;
+      $('l-date').textContent = p(d.getDate()) + '/' + p(d.getMonth() + 1);
+    }
+  }
+  document.addEventListener('config', e => {
+    cfg = { ...cfg, ...e.detail };
+    if (!WIDTH[cfg.style]) cfg.style = 'line';
+    document.body.dataset.style = cfg.style;
+    setBase(WIDTH[cfg.style]);
+    show('l-dash', cfg.date); show('l-date', cfg.date);
+    show('l-sec', cfg.seconds || cfg.h12);
+    show('s-wd', cfg.date); show('s-dt', cfg.date);
+    show('a-cap', cfg.date);
+    $('a-s').style.display = cfg.seconds ? '' : 'none';
+    tick();
+  });
+  tick();
+  setInterval(tick, 1000);
+</script>
+</body>
+</html>

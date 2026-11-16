@@ -1,0 +1,140 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8" />
+<link rel="stylesheet" href="./common.css" />
+<style>
+  body { font-size: 14px; font-weight: 500; }
+  .wrap { width: 316px; margin: 2px; box-sizing: border-box; }
+  .wrap.card-bg { padding: 16px 16px 12px 16px; }
+  canvas { display: block; width: 100%; }
+  .row { display: flex; justify-content: space-between; align-items: center; height: 23px; padding-left: 12px; position: relative; }
+  .row.mark::before { content: ''; position: absolute; left: 0; top: 5px; bottom: 5px; width: 3px; border-radius: 2px; background: var(--c, var(--accent)); }
+  .row span:last-child { font-weight: 600; }
+  .gap { height: 20px; }
+  .net { display: flex; gap: 8px; align-items: stretch; }
+  .scale { display: flex; flex-direction: column; justify-content: space-between; font-size: 10px; color: var(--fg); opacity: 0.8; width: 74px; padding-left: 12px; }
+  .bar { height: 7px; border-radius: 4px; background: rgba(0, 0, 0, 0.42); overflow: hidden; margin: 4px 0 14px 0; }
+  .bar i { display: block; height: 100%; width: 0; border-radius: 4px; background: var(--glow); transition: width 0.8s, background 0.6s; }
+</style>
+</head>
+<body data-widget="sysmon" data-w="320">
+<div class="wrap shadow card-bg" id="wrap" style="opacity:var(--opacity,1)">
+  <div id="g-cpu"><canvas id="cpuG" height="34"></canvas>
+  <div style="height:8px"></div></div>
+  <div id="sec-cpu">
+  <div class="row mark" style="--c:var(--accent)"><span>Процессор</span><span id="cpu">–</span></div>
+  </div>
+  <div id="sec-memory">
+  <div class="row mark" style="--c:var(--accent2)"><span>Память</span><span id="mem">–</span></div>
+  <div class="row"><span>Занято памяти</span><span id="memUsed">–</span></div>
+  <div class="row"><span>Всего памяти</span><span id="memTotal">–</span></div>
+  </div>
+
+  <div id="sec-network">
+  <div class="gap"></div>
+  <div class="net" id="g-net">
+    <div class="scale"><span id="s4"></span><span id="s3"></span><span id="s2"></span><span id="s1"></span><span>0 B/s</span></div>
+    <canvas id="netG" height="70" style="flex:1;min-width:0;width:auto"></canvas>
+  </div>
+  <div style="height:10px"></div>
+  <div class="row mark" style="--c:var(--accent)"><span>Загрузка</span><span id="down">–</span></div>
+  <div class="row mark" style="--c:var(--accent2)"><span>Отдача</span><span id="up">–</span></div>
+  </div>
+
+  <div id="sec-disk">
+  <div class="gap"></div>
+  <div class="bar"><i id="diskBar"></i></div>
+  <div class="row"><span>Диск занят</span><span id="diskUsed">–</span></div>
+  <div class="row"><span>Всего</span><span id="diskTotal">–</span></div>
+  </div>
+</div>
+
+<script type="module">
+  import { cssVar, size, show } from './common.js';
+  import * as zebar from './zebar.mjs';
+
+  const $ = id => document.getElementById(id);
+  const N = 60;
+  const cpuHist = Array(N).fill(0), downHist = Array(N).fill(0), upHist = Array(N).fill(0);
+
+  function prep(cv) {
+    const dpr = window.devicePixelRatio || 1, w = cv.clientWidth, h = cv.clientHeight || +cv.getAttribute('height');
+    if (cv.width !== w * dpr) { cv.width = w * dpr; cv.height = h * dpr; }
+    const g = cv.getContext('2d');
+    g.setTransform(dpr, 0, 0, dpr, 0, 0);
+    g.clearRect(0, 0, w, h);
+    return [g, w, h];
+  }
+  function line(g, w, h, data, max, color, fill) {
+    g.beginPath();
+    data.forEach((v, i) => {
+      const x = (i / (data.length - 1)) * w, y = h - 1 - Math.min(1, v / max) * (h - 3);
+      i ? g.lineTo(x, y) : g.moveTo(x, y);
+    });
+    g.strokeStyle = color; g.lineWidth = 1.3; g.lineJoin = 'round'; g.stroke();
+    if (fill) { g.lineTo(w, h); g.lineTo(0, h); g.closePath(); g.globalAlpha = 0.22; g.fillStyle = color; g.fill(); g.globalAlpha = 1; }
+  }
+  function draw() {
+    let [g, w, h] = prep($('cpuG'));
+    line(g, w, h, cpuHist, 100, cssVar('--glow'), true);
+    [g, w, h] = prep($('netG'));
+    const max = Math.max(1024, ...downHist, ...upHist) * 1.1;
+    line(g, w, h, upHist, max, cssVar('--accent2'), false);
+    line(g, w, h, downHist, max, cssVar('--accent'), false);
+    [1, 2, 3, 4].forEach(k => $('s' + k).textContent = size(max * k / 4, '/s'));
+  }
+
+  const providers = zebar.createProviderGroup({
+    cpu: { type: 'cpu', refreshInterval: 2000 },
+    memory: { type: 'memory', refreshInterval: 3000 },
+    network: { type: 'network', refreshInterval: 2000 },
+    disk: { type: 'disk', refreshInterval: 60000 },
+  });
+
+  let lastNet = null;
+  function render() {
+    const o = providers.outputMap;
+    if (o.cpu) $('cpu').textContent = o.cpu.usage.toFixed(1) + '%';
+    if (o.memory) {
+      $('mem').textContent = Math.round(o.memory.usage) + '%';
+      $('memUsed').textContent = size(o.memory.usedMemory);
+      $('memTotal').textContent = size(o.memory.totalMemory);
+    }
+    const tr = o.network?.traffic;
+    if (tr) {
+      $('down').textContent = size(tr.received?.bytes, '/s');
+      $('up').textContent = size(tr.transmitted?.bytes, '/s');
+    }
+    const disks = o.disk?.disks;
+    if (disks?.length) {
+      const d = disks.find(x => (x.mountPoint || '').toUpperCase().startsWith('C:')) || disks[0];
+      const total = d.totalSpace.bytes, used = total - d.availableSpace.bytes;
+      $('diskUsed').textContent = size(used);
+      $('diskTotal').textContent = size(total);
+      $('diskBar').style.width = (used / total * 100).toFixed(1) + '%';
+    }
+  }
+  providers.onOutput(render);
+
+  // История для графиков: раз в 2 секунды берём последние значения.
+  setInterval(() => {
+    const o = providers.outputMap;
+    cpuHist.push(o.cpu?.usage ?? 0); cpuHist.shift();
+    downHist.push(o.network?.traffic?.received?.bytes ?? 0); downHist.shift();
+    upHist.push(o.network?.traffic?.transmitted?.bytes ?? 0); upHist.shift();
+    draw();
+  }, 2000);
+  document.addEventListener('theme', () => setTimeout(draw, 50));
+  document.addEventListener('config', e => {
+    const c = e.detail;
+    document.getElementById('wrap').classList.toggle('card-bg', c.card !== false);
+    show('sec-cpu', c.cpu); show('sec-memory', c.memory); show('sec-network', c.network); show('sec-disk', c.disk);
+    show('g-cpu', c.graphs !== false && c.cpu !== false);
+    document.getElementById('g-net').style.display = c.graphs === false ? 'none' : 'flex';
+    setTimeout(draw, 50);
+  });
+  draw();
+</script>
+</body>
+</html>

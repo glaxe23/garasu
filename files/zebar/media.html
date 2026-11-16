@@ -1,0 +1,298 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8" />
+<link rel="stylesheet" href="./common.css" />
+<style>
+  body { font-family: 'Segoe UI Variable Text', 'Segoe UI', sans-serif; }
+  .card {
+    position: absolute; left: 2px; top: 2px; width: 516px; height: 368px;
+    padding: 16px 18px 12px 16px; border-radius: 18px;
+    display: flex; flex-direction: column;
+    opacity: 0; transform: translateY(8px); transition: opacity 0.4s, transform 0.4s, background 0.6s;
+  }
+  .card.on { opacity: var(--opacity, 0.96); transform: none; }
+  .top { display: flex; gap: 18px; height: 150px; flex: none; }
+  .art {
+    flex: none; width: 150px; height: 150px; border-radius: 10px; overflow: hidden; position: relative;
+    background: linear-gradient(135deg, var(--accent), var(--accent2));
+    display: flex; align-items: center; justify-content: center;
+    font: 44px 'Segoe Fluent Icons', 'Segoe MDL2 Assets'; color: var(--pill);
+  }
+  .art img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; opacity: 0; transition: opacity 0.5s; -webkit-user-drag: none; }
+  .art img.on { opacity: 1; }
+  .lyr { flex: 1; min-width: 0; height: 150px; overflow: hidden; position: relative;
+         -webkit-mask-image: linear-gradient(to bottom, transparent 0, #000 22%, #000 78%, transparent 100%); }
+  .lyr .roll { position: absolute; left: 0; right: 0; top: 0; transition: transform 0.5s ease; }
+  .lyr p { font-size: 13px; line-height: 18px; padding: 4px 0; color: var(--fg); opacity: 0.38; font-weight: 500;
+           transition: opacity 0.4s; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .lyr p.cur { opacity: 1; font-weight: 700; }
+  .lyr .hint { position: absolute; left: 0; right: 0; top: 62px; font-size: 12px; color: var(--muted); }
+  .title { margin-top: 12px; font-size: 19px; font-weight: 700; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .artist { font-size: 13px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; margin-top: 2px; min-height: 18px; }
+  #bars { display: block; width: 482px; height: 50px; margin-top: auto; flex: none; }
+  .prog { height: 3px; border-radius: 2px; background: rgba(255, 255, 255, 0.14); margin: 6px 0 4px 0; overflow: hidden; flex: none; }
+  .prog i { display: block; height: 100%; width: 0; background: var(--accent); border-radius: 2px; }
+  .ctl { display: flex; align-items: center; gap: 8px; height: 42px; flex: none; }
+  .time { font: 600 12px 'Space Grotesk', sans-serif; color: var(--muted); min-width: 86px; }
+  .vol { margin-left: auto; margin-right: 10px; display: flex; align-items: center; gap: 7px; height: 30px; padding: 0 4px; cursor: default; }
+  .vol span { font: 13px 'Segoe Fluent Icons', 'Segoe MDL2 Assets'; color: var(--fg); width: 16px; text-align: center; }
+  .vol b { font: 600 11px 'Space Grotesk', sans-serif; color: var(--muted); width: 22px; text-align: right; }
+  input[type=range] { -webkit-appearance: none; appearance: none; width: 110px; height: 18px; background: transparent; cursor: pointer; margin: 0; }
+  input[type=range]::-webkit-slider-runnable-track {
+    height: 4px; border-radius: 2px;
+    background: linear-gradient(to right, var(--accent) var(--v, 50%), rgba(255, 255, 255, 0.18) var(--v, 50%));
+  }
+  input[type=range]::-webkit-slider-thumb {
+    -webkit-appearance: none; width: 12px; height: 12px; border-radius: 6px; margin-top: -4px;
+    background: var(--fg); border: none; box-shadow: 0 1px 4px rgba(0, 0, 0, 0.4);
+  }
+  button {
+    font-family: 'Segoe Fluent Icons', 'Segoe MDL2 Assets'; font-size: 12px;
+    width: 30px; height: 30px; border-radius: 15px; border: none; cursor: pointer;
+    background: transparent; color: var(--fg); flex: none;
+  }
+  button:hover { background: rgba(255, 255, 255, 0.12); }
+  button.play { width: 40px; height: 40px; border-radius: 20px; font-size: 14px; background: var(--accent); color: var(--pill); }
+  button.play:hover { filter: brightness(1.1); background: var(--accent); }
+</style>
+</head>
+<body data-widget="media" data-w="520">
+<div class="card card-bg" id="card">
+  <div class="top">
+    <div class="art" id="art">&#xE8D6;<img id="artA" alt=""><img id="artB" alt=""></div>
+    <div class="lyr" id="lyr"><div class="roll" id="roll"></div><div class="hint" id="hint"></div></div>
+  </div>
+  <div class="title" id="title"></div>
+  <div class="artist" id="artist"></div>
+  <canvas id="bars"></canvas>
+  <div class="prog"><i id="prog"></i></div>
+  <div class="ctl">
+    <span class="time" id="time"></span>
+    <div class="vol click" id="volBox">
+      <span id="volIcon">&#xE995;</span>
+      <input type="range" id="vol" min="0" max="100" step="1" value="50">
+      <b id="volNum"></b>
+    </div>
+    <button id="prev" title="Предыдущий">&#xE892;</button>
+    <button id="play" class="play" title="Пауза / играть">&#xE768;</button>
+    <button id="next" title="Следующий">&#xE893;</button>
+  </div>
+</div>
+<script type="module">
+  import { read, cssVar, tools, exec } from './common.js';
+  import * as zebar from './zebar.mjs';
+
+  const $ = id => document.getElementById(id);
+  const mmss = s => Math.floor(s / 60) + ':' + String(Math.floor(s % 60)).padStart(2, '0');
+  const providers = zebar.createProviderGroup({ media: { type: 'media' }, audio: { type: 'audio' } });
+  let cfg = { art: true, wave: true, volume: true, lyrics: true };
+  let now = { title: '', art: '', lyrics: [], synced: false, state: 'off' }, lastNow = '';
+  let sess = null, basePos = 0, baseAt = 0, lastPos = -1;   // позиция трека: досчитываем сами между обновлениями
+  let artFront = 'artA', shownArt = '', curLine = -2, volDrag = 0, sentTrack = null, ws = null;
+  // что играет, плеер сам сообщает фоновому помощнику: тот найдёт обложку и текст песни
+  function reportTrack() {
+    if (!ws || ws.readyState !== 1) return;
+    const key = sess ? [sess.title, sess.artist, sess.sessionId].join('|') : '';
+    if (key === sentTrack) return;
+    sentTrack = key;
+    ws.send('track:' + JSON.stringify({ title: sess?.title || '', artist: sess?.artist || '', app: sess?.sessionId || '',
+      duration: sess ? Math.round((sess.endTime || 0) - (sess.startTime || 0)) : 0 }));
+  }
+
+  function position() {
+    if (!sess) return 0;
+    const p = basePos + (sess.isPlaying ? (performance.now() - baseAt) / 1000 : 0);
+    const len = (sess.endTime || 0) - (sess.startTime || 0);
+    return len > 0 ? Math.min(p, len) : p;
+  }
+
+  function render() {
+    sess = providers.outputMap.media?.currentSession || null;
+    $('card').classList.toggle('on', !!(sess && sess.title));
+    reportTrack();
+    // громкость приложения приходит от помощника (nowplaying.json); если её нет, показываем общую громкость Windows
+    const dev = providers.outputMap.audio?.defaultPlaybackDevice;
+    if (now.vol == null && dev && performance.now() - volDrag > 800) setVolUi(Math.round(dev.volume));
+    if (!sess) return;
+    $('title').textContent = sess.title || '';
+    $('artist').textContent = sess.artist || sess.albumTitle || '';
+    $('play').innerHTML = sess.isPlaying ? '&#xE769;' : '&#xE768;';
+    const p = (sess.position || 0) - (sess.startTime || 0);
+    if (p !== lastPos || !sess.isPlaying) { lastPos = p; basePos = p; baseAt = performance.now(); }
+  }
+  providers.onOutput(render);
+  $('play').onclick = () => providers.outputMap.media?.togglePlayPause();
+  $('prev').onclick = () => providers.outputMap.media?.previous();
+  $('next').onclick = () => providers.outputMap.media?.next();
+
+  // ---- громкость: ползунок и колёсико мыши над карточкой
+  function setVolUi(v) {
+    $('vol').value = v;
+    $('vol').style.setProperty('--v', v + '%');
+    $('volNum').textContent = v;
+    $('volIcon').innerHTML = v === 0 ? '&#xE74F;' : v < 34 ? '&#xE993;' : v < 67 ? '&#xE994;' : '&#xE995;';
+  }
+  function setVolume(v) {
+    v = Math.max(0, Math.min(100, Math.round(v)));
+    volDrag = performance.now();
+    setVolUi(v);
+    try {
+      if (now.vol != null && ws && ws.readyState === 1) ws.send('vol:' + v);     // громкость приложения с музыкой
+      else providers.outputMap.audio?.setVolume(v);                              // запасной вариант: громкость Windows
+    } catch (e) { console.error(e); }
+  }
+  $('vol').addEventListener('input', e => setVolume(+e.target.value));
+  $('volIcon').style.cursor = 'pointer';
+  $('volIcon').title = 'Микшер громкости приложений';
+  $('volIcon').onclick = () => { if (tools && tools.mixer) exec([tools.mixer]).catch(() => {}); };
+  $('card').addEventListener('wheel', e => {
+    if (cfg.volume === false) return;
+    e.preventDefault();
+    setVolume(+$('vol').value + (e.deltaY < 0 ? 4 : -4));
+  }, { passive: false });
+
+  // ---- обложка и текст песни: их готовит фоновый помощник в nowplaying.json
+  function setArt(src) {
+    if (src === shownArt) return;
+    shownArt = src;
+    const back = artFront === 'artA' ? 'artB' : 'artA';
+    if (!src) { $(artFront).classList.remove('on'); return; }
+    const img = $(back);
+    img.onload = () => { img.classList.add('on'); $(artFront).classList.remove('on'); artFront = back; };
+    img.src = './' + src;
+  }
+  function buildLyrics() {
+    const roll = $('roll');
+    roll.innerHTML = '';
+    curLine = -2;
+    const on = cfg.lyrics && now.lyrics && now.lyrics.length;
+    for (const [, text] of on ? now.lyrics : []) {
+      const p = document.createElement('p');
+      p.textContent = text;
+      roll.appendChild(p);
+    }
+    $('hint').textContent = on ? '' : !cfg.lyrics ? '' :
+      now.state === 'loading' ? 'ищу текст песни…' : now.state === 'none' ? 'текст этой песни не найден' : '';
+  }
+  async function loadNow() {
+    try {
+      const txt = await read('nowplaying.json');
+      if (txt && txt !== lastNow) {
+        lastNow = txt;
+        now = JSON.parse(txt);
+        if (now.vol != null && performance.now() - volDrag > 1500) setVolUi(now.vol);
+        $('volBox').title = now.vol != null ? 'Громкость: ' + (now.app || 'приложение с музыкой') : 'Громкость Windows';
+        setArt(cfg.art !== false ? now.art : '');
+        buildLyrics();
+      }
+    } catch (e) {}
+  }
+  function tickLyrics(pos, len) {
+    const lines = now.lyrics || [];
+    if (!cfg.lyrics || !lines.length || !sess) return;
+    let i;
+    if (now.synced) { i = -1; for (let k = 0; k < lines.length; k++) if (lines[k][0] <= pos + 0.25) i = k; }
+    else i = len > 0 ? Math.min(lines.length - 1, Math.floor(pos / len * lines.length)) : 0;   // без таймкодов: по доле трека
+    if (i === curLine) return;
+    curLine = i;
+    const ps = $('roll').children;
+    for (let k = 0; k < ps.length; k++) ps[k].classList.toggle('cur', k === i);
+    $('roll').style.transform = 'translateY(' + (62 - Math.max(0, i) * 26) + 'px)';              // текущая строка по центру
+  }
+
+  // ---- визуализатор: спектр звука от фонового помощника, 96 полос 0..255 тридцать раз в секунду
+  const N = 56;
+  const levels = new Float32Array(96), bars = new Float32Array(N), peaks = new Float32Array(N);
+  let lastMsg = 0;
+  function connect() {
+    if (!tools || !tools.audio) return setTimeout(connect, 1000);
+    try {
+      ws = new WebSocket(tools.audio);
+      ws.binaryType = 'arraybuffer';
+      ws.onopen = () => { sentTrack = null; reportTrack(); };
+      ws.onmessage = e => {
+        const a = new Uint8Array(e.data);
+        for (let i = 0; i < 96 && i < a.length; i++) levels[i] = a[i] / 255;
+        lastMsg = performance.now();
+      };
+      ws.onclose = () => setTimeout(connect, 2500);
+      ws.onerror = () => { try { ws.close(); } catch (e) {} };
+    } catch (e) { setTimeout(connect, 2500); }
+  }
+  // Экономия: цвета темы запоминаются (а не запрашиваются на каждом кадре), визуализатор рисуется
+  // 30 раз в секунду и только пока есть звук; текст времени и прогресс обновляются 4 раза в секунду;
+  // когда плеер скрыт или музыка на паузе, цикл засыпает и проверяет состояние дважды в секунду.
+  let colA = '#fff', colB = '#fff', colFg = '#fff', lastDraw = 0, lastText = 0, settled = false;
+  function colors() { colA = cssVar('--accent'); colB = cssVar('--glow'); colFg = cssVar('--fg'); settled = false; }
+  document.addEventListener('theme', () => setTimeout(colors, 50));
+  colors();
+  function schedule(idle) { idle ? setTimeout(frame, 450) : requestAnimationFrame(frame); }
+  function frame() {
+    const t = performance.now();
+    const shown = $('card').classList.contains('on');
+    const live = shown && cfg.wave !== false && t - lastMsg < 1500 && !!(sess && sess.isPlaying);
+    if (t - lastText > 250) {
+      lastText = t;
+      const len = sess ? (sess.endTime || 0) - (sess.startTime || 0) : 0, pos = position();
+      $('prog').style.width = len > 0 ? Math.min(100, pos / len * 100) + '%' : '0';
+      const txt = sess && len > 0 ? mmss(pos) + ' / ' + mmss(len) : '';
+      if ($('time').textContent !== txt) $('time').textContent = txt;
+      tickLyrics(pos, len);
+    }
+    if (!live && settled) return schedule(true);          // рисовать нечего: спим
+    if (t - lastDraw < 32) return schedule(false);
+    lastDraw = t;
+    draw(live);
+    schedule(false);
+  }
+  function draw(live) {
+    const cv = $('bars'), dpr = window.devicePixelRatio || 1, w = cv.clientWidth, h = cv.clientHeight;
+    if (cv.width !== Math.round(w * dpr)) { cv.width = Math.round(w * dpr); cv.height = Math.round(h * dpr); }
+    const g = cv.getContext('2d');
+    g.setTransform(dpr, 0, 0, dpr, 0, 0);
+    g.clearRect(0, 0, w, h);
+    const gap = 3, bw = (w - gap * (N - 1)) / N;
+    const grad = g.createLinearGradient(0, h, 0, 0);
+    grad.addColorStop(0, colA);
+    grad.addColorStop(1, colB);
+    let energy = 0;
+    for (let i = 0; i < N; i++) {
+      // каждая полоска берёт среднее из своего участка спектра
+      const a = Math.floor(i / N * 96), b = Math.max(a + 1, Math.floor((i + 1) / N * 96));
+      let v = 0;
+      for (let k = a; k < b; k++) v = Math.max(v, levels[k]);
+      if (!live) v = 0;
+      bars[i] += (v - bars[i]) * (v > bars[i] ? 0.7 : 0.28);          // быстро вверх, плавно вниз
+      peaks[i] = Math.max(bars[i], peaks[i] - 0.024);                  // «шапочки» медленно падают
+      energy += bars[i] + peaks[i];
+      const bh = Math.max(2, bars[i] * (h - 6)), x = i * (bw + gap);
+      g.fillStyle = grad;
+      g.globalAlpha = 0.95;
+      g.beginPath(); g.roundRect(x, h - bh, bw, bh, Math.min(bw / 2, 2.5)); g.fill();
+      if (peaks[i] > 0.03) {
+        g.globalAlpha = 0.7;
+        g.fillStyle = colFg;
+        g.fillRect(x, h - Math.max(2, peaks[i] * (h - 6)) - 3, bw, 1.5);
+      }
+    }
+    g.globalAlpha = 1;
+    settled = !live && energy < 0.02;        // все полоски опустились: можно больше не рисовать
+  }
+
+  document.addEventListener('config', e => {
+    cfg = { ...cfg, ...e.detail };
+    $('art').style.display = cfg.art === false ? 'none' : '';
+    $('lyr').style.visibility = cfg.lyrics ? 'visible' : 'hidden';
+    $('bars').style.visibility = cfg.wave === false ? 'hidden' : 'visible';
+    $('volBox').style.visibility = cfg.volume === false ? 'hidden' : 'visible';
+    setArt(cfg.art !== false ? now.art : '');
+    buildLyrics();
+  });
+  loadNow();
+  setInterval(loadNow, 1500);
+  connect();
+  frame();
+</script>
+</body>
+</html>

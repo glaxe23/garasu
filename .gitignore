@@ -1,0 +1,16 @@
+# личное и создаваемое при работе
+__pycache__/
+*.pyc
+*.log
+*.tmp
+settings.json
+state.json
+profiles/
+thumbs/
+wallpapers/
+photos/
+backup/
+claude_status.txt
+bar_focus.txt
+*.exe
+*.zip

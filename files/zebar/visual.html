@@ -1,0 +1,72 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8" />
+<link rel="stylesheet" href="./common.css" />
+<style>
+  canvas { display: block; width: 556px; height: 146px; margin: 2px; opacity: var(--opacity, 0.9); }
+</style>
+</head>
+<body data-widget="visual" data-w="560">
+<canvas id="cv"></canvas>
+<script type="module">
+  import { cssVar, tools } from './common.js';
+  // Спектр звука приходит от фонового помощника (helper.pyw) по локальному соединению:
+  // 30 раз в секунду массив из 96 чисел от 0 до 255. Здесь он сжимается до нужного числа полосок.
+  const cv = document.getElementById('cv');
+  let cfg = { bars: 48, mirror: false }, levels = new Float32Array(96), shown = new Float32Array(96), ws = null, lastMsg = 0;
+
+  function connect() {
+    if (!tools || !tools.audio) return setTimeout(connect, 1000);
+    try {
+      ws = new WebSocket(tools.audio);
+      ws.binaryType = 'arraybuffer';
+      ws.onmessage = e => {
+        const a = new Uint8Array(e.data);
+        for (let i = 0; i < 96 && i < a.length; i++) levels[i] = a[i] / 255;
+        lastMsg = performance.now();
+      };
+      ws.onclose = () => setTimeout(connect, 2000);
+      ws.onerror = () => { try { ws.close(); } catch (e) {} };
+    } catch (e) { setTimeout(connect, 2000); }
+  }
+
+  let colA = '#fff', colB = '#fff', lastDraw = 0;
+  function colors() { colA = cssVar('--accent'); colB = cssVar('--glow'); }
+  document.addEventListener('theme', () => setTimeout(colors, 50));
+  colors();
+  function draw() {
+    const now = performance.now();
+    if (now - lastMsg > 3000 && now - lastDraw > 3000) return setTimeout(draw, 500);   // тишина: спим
+    if (now - lastDraw < 32) return requestAnimationFrame(draw);
+    lastDraw = now;
+    const dpr = window.devicePixelRatio || 1, w = cv.clientWidth, h = cv.clientHeight;
+    if (cv.width !== Math.round(w * dpr)) { cv.width = Math.round(w * dpr); cv.height = Math.round(h * dpr); }
+    const g = cv.getContext('2d');
+    g.setTransform(dpr, 0, 0, dpr, 0, 0);
+    g.clearRect(0, 0, w, h);
+    if (performance.now() - lastMsg > 1500) levels.fill(0);       // помощник молчит: полоски опускаются
+    const n = Math.max(8, Math.min(96, cfg.bars || 48));
+    const gap = 3, bw = (w - gap * (n - 1)) / n;
+    const grad = g.createLinearGradient(0, h, 0, 0);
+    grad.addColorStop(0, colA);
+    grad.addColorStop(1, colB);
+    g.fillStyle = grad;
+    for (let i = 0; i < n; i++) {
+      let src = cfg.mirror ? Math.abs(i - (n - 1) / 2) / ((n - 1) / 2) : i / (n - 1);   // 0..1 по частотам
+      const k = Math.min(95, Math.round(src * 95));
+      shown[i] += (levels[k] - shown[i]) * (levels[k] > shown[i] ? 0.6 : 0.18);       // быстро вверх, плавно вниз
+      const bh = Math.max(3, shown[i] * (h - 4));
+      const x = i * (bw + gap), r = Math.min(bw / 2, 3);
+      g.beginPath();
+      g.roundRect(x, h - bh, bw, bh, r);
+      g.fill();
+    }
+    requestAnimationFrame(draw);
+  }
+  document.addEventListener('config', e => { cfg = { ...cfg, ...e.detail }; });
+  connect();
+  draw();
+</script>
+</body>
+</html>
