@@ -7,6 +7,11 @@
 """
 import os, re, sys, json, time, ctypes, hashlib, threading, subprocess, urllib.request, urllib.parse
 
+# numpy (спектр музыки) тянет OpenBLAS, а он заранее резервирует буфер под каждое ядро:
+# на 16 ядрах это ~500 МБ личной памяти впустую. FFT в numpy идёт без BLAS, одного потока хватает.
+for _v in ("OPENBLAS_NUM_THREADS", "OMP_NUM_THREADS", "MKL_NUM_THREADS"):
+    os.environ.setdefault(_v, "1")
+
 ctypes.windll.kernel32.CreateMutexW(None, False, "RyokuWinHelper")
 if ctypes.windll.kernel32.GetLastError() == 183:
     sys.exit()
@@ -36,10 +41,31 @@ def mtime(p):
         return 0
 
 
-def sync_photos(last):
+def photo_sources(pack):
+    """Какие картинки показывать. Свои лежат прямо в папке photos, паки тем - в подпапках photos/<имя темы>."""
+    def pics(folder, prefix=""):
+        try:
+            return sorted(prefix + f for f in os.listdir(folder) if f.lower().endswith(EXT))
+        except OSError:
+            return []
+    own = pics(W.PHOTOS)
+    if pack == "own":
+        return own
+    subs = sorted(d for d in os.listdir(W.PHOTOS) if os.path.isdir(os.path.join(W.PHOTOS, d)))
+    if pack == "mix":
+        return own + [p for d in subs for p in pics(os.path.join(W.PHOTOS, d), d + "/")]
+    try:
+        tid = json.load(open(os.path.join(W.here, "state.json"), encoding="utf-8")).get("theme", "")
+    except Exception:
+        tid = ""
+    themed = pics(os.path.join(W.PHOTOS, tid), tid + "/") if tid in subs else []
+    return themed or own                       # для темы пака нет: показываем свои
+
+
+def sync_photos(last, pack="theme"):
     """Уменьшенные копии картинок из папки photos -> в папку виджета, список -> photos.json."""
     os.makedirs(W.PHOTOS, exist_ok=True)
-    src = sorted(f for f in os.listdir(W.PHOTOS) if f.lower().endswith(EXT))
+    src = photo_sources(pack)
     sig = [(f, mtime(os.path.join(W.PHOTOS, f))) for f in src]
     if sig == last:
         return last
@@ -52,8 +78,8 @@ def sync_photos(last):
         if not os.path.exists(out):
             try:
                 im = ImageOps.exif_transpose(Image.open(os.path.join(W.PHOTOS, f))).convert("RGB")
-                im.thumbnail((1000, 1000))
-                im.save(out, quality=88)
+                im.thumbnail((800, 800))                 # окно виджета 300x400: больше не нужно
+                im.save(out, quality=84, optimize=True)
             except Exception as e:
                 log("photo", f, e)
                 continue
@@ -393,7 +419,7 @@ def main():
         audio = A.Server(W.AUDIO_PORT, log, on_ws)
     except Exception as e:
         log("audio off:", e)
-    last_note, last_cal, last_photos, tick = None, None, None, 0
+    last_note, last_cal, last_photos, last_sched, tick = None, None, None, None, 0
     while True:
         try:
             cfg = W.load()
@@ -403,8 +429,14 @@ def main():
             if key != last_note or (cal, time.strftime("%d")) != last_cal:
                 last_note, last_cal = key, (cal, time.strftime("%d"))
                 write_focus(T.sync(cfg))
+            if cfg["schedule"]["on"]:
+                sk = (cfg["schedule"]["note"], mtime(cfg["schedule"]["note"]))
+                if sk != last_sched:
+                    import schedule
+                    schedule.sync(cfg)
+                    last_sched = (cfg["schedule"]["note"], mtime(cfg["schedule"]["note"]))
             if tick % 3 == 0:
-                last_photos = sync_photos(last_photos)
+                last_photos = sync_photos(last_photos, cfg["photo"].get("pack", "theme"))
             if audio:
                 audio.enable(cfg["visual"]["on"] or (cfg["media"]["on"] and cfg["media"]["wave"]))
         except Exception as e:

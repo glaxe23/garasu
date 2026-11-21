@@ -121,7 +121,7 @@ win = tk.Tk()
 win.title(TITLE)
 win.overrideredirect(True)
 win.attributes("-topmost", True)
-win.attributes("-alpha", 0.94)
+ui.hidden(win, 0.94)
 win.configure(bg=BG)
 SW = win.winfo_screenwidth()
 WIDTH = 400
@@ -181,6 +181,13 @@ def add_row(key, title, get, put, get_mute, put_mute, big=False, exe=None):
         paint(key)
 
     ico.bind("<Button-1>", toggle_mute)
+    def all_of(w):                                   # колёсико над любой частью строки крутит её громкость
+        yield w
+        for c in w.winfo_children():
+            yield from all_of(c)
+    for w in all_of(row):
+        if w is not s:
+            w.bind("<MouseWheel>", s.wheel)
     rows[key] = (s, num, ico, get, get_mute, row)
     paint(key, sync=True)
 
@@ -249,4 +256,5 @@ except Exception:
 win.bind("<Escape>", lambda e: win.destroy())
 win.bind("<FocusOut>", lambda e: win.after(150, lambda: win.focus_displayof() is None and win.destroy()))
 win.after(80, lambda: (win.lift(), win.focus_force()))
+ui.live(win)                      # плавная подсветка кнопок и ссылок при наведении
 win.mainloop()

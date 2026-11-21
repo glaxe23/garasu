@@ -8,7 +8,7 @@
   .box { width: 246px; height: 296px; margin: 2px; padding: 14px 16px 12px 16px; opacity: var(--opacity, 1); border-radius: 18px;
          display: flex; flex-direction: column; align-items: center; }
   .head { align-self: stretch; display: flex; align-items: baseline; }
-  .tag { font-size: 10px; letter-spacing: 2px; color: var(--accent); font-weight: 700; flex: 1; }
+  .tag { font-size: 11px; letter-spacing: 1.8px; color: var(--accent); font-weight: 700; flex: 1; }
   .count { font: 600 12px 'Space Grotesk', sans-serif; color: var(--muted); }
   .ring { position: relative; width: 168px; height: 168px; margin-top: 8px; }
   svg { width: 168px; height: 168px; transform: rotate(-90deg); }
@@ -19,12 +19,25 @@
   .mid { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; }
   .time { font: 700 40px 'Space Grotesk', sans-serif; letter-spacing: -1px; }
   .phase { font-size: 12px; color: var(--muted); margin-top: -2px; }
+  /* − и + по бокам кольца: своё время этапа. Видны, пока таймер стоит */
+  .adj { position: absolute; top: 70px; width: 28px; height: 28px; border-radius: 14px; font: 700 17px/26px 'Segoe UI', sans-serif;
+         background: rgba(255, 255, 255, 0.10); }
+  #minus { left: -35px; } #plus { right: -35px; }
+  .running .adj { display: none; }
+  .time { cursor: ns-resize; }
   .ctl { margin-top: auto; display: flex; align-items: center; gap: 10px; }
   button { font-family: 'Segoe Fluent Icons', 'Segoe MDL2 Assets'; font-size: 12px; width: 32px; height: 32px; border-radius: 16px;
            border: none; cursor: pointer; background: transparent; color: var(--fg); }
   button:hover { background: rgba(255, 255, 255, 0.12); }
   button.play { width: 42px; height: 42px; border-radius: 21px; font-size: 14px; background: var(--accent); color: var(--pill); }
+  #amb.on { color: var(--accent); background: rgba(255, 255, 255, 0.10); }
   button.play:hover { filter: brightness(1.1); background: var(--accent); }
+  /* этап закончился: кольцо мягко «вдыхает», время вспыхивает цветом темы (видно, даже если звук выключен) */
+  @keyframes breathe { 0% { transform: scale(1); } 30% { transform: scale(1.07); } 100% { transform: scale(1); } }
+  @keyframes flash { 0%, 100% { color: var(--fg); } 25%, 60% { color: var(--glow); } }
+  .ring.pulse { animation: breathe 1.4s cubic-bezier(.22, .9, .3, 1) 2; }
+  .ring.pulse .time { animation: flash 1.4s ease 2; }
+  html.noanim .ring.pulse, html.noanim .ring.pulse .time { animation: none; }
 </style>
 </head>
 <body data-widget="pomodoro" data-w="250">
@@ -32,24 +45,48 @@
   <div class="head"><span class="tag">ТАЙМЕР</span><span class="count" id="count"></span></div>
   <div class="ring">
     <svg viewBox="0 0 168 168"><circle class="bg" cx="84" cy="84" r="76"/><circle class="fg" id="arc" cx="84" cy="84" r="76"/></svg>
-    <div class="mid"><div class="time" id="time">25:00</div><div class="phase" id="phase">работа</div></div>
+    <div class="mid"><div class="time click" id="time" title="Колесо мыши: ±1 минута">25:00</div><div class="phase" id="phase">работа</div></div>
+    <button class="adj" id="minus" title="−5 минут">−</button>
+    <button class="adj" id="plus" title="+5 минут">+</button>
   </div>
   <div class="ctl">
     <button id="reset" title="Сбросить">&#xE72C;</button>
     <button id="play" class="play" title="Старт / пауза">&#xE768;</button>
     <button id="skip" title="Пропустить этап">&#xE893;</button>
+    <button id="amb" title="Фон во время работы: выкл → дождь → шум">&#xE767;</button>
   </div>
 </div>
 <script type="module">
-  import './common.js';
+  import { exec } from './common.js';
+  import * as common from './common.js';
   // Помодоро: отрезок работы, потом короткий перерыв. Состояние хранится в памяти виджета (localStorage),
   // поэтому таймер не сбивается при смене темы или перезапуске виджетов.
   const $ = id => document.getElementById(id), LEN = 2 * Math.PI * 76;
   let cfg = { work: 25, rest: 5, sound: true };
-  let st = { phase: 'work', running: false, endsAt: 0, left: 25 * 60, done: 0, day: '' };
+  // own: время этапов, выбранное прямо на виджете (минуты). Действует, пока в настройках не поменяют ползунок.
+  let st = { phase: 'work', running: false, endsAt: 0, left: 25 * 60, done: 0, day: '', own: {}, seen: '' };
   try { st = { ...st, ...JSON.parse(localStorage.getItem('pomodoro') || '{}') }; } catch (e) {}
-  const total = () => (st.phase === 'work' ? cfg.work : cfg.rest) * 60;
-  const save = () => { try { localStorage.setItem('pomodoro', JSON.stringify(st)); } catch (e) {} };
+  const mins = p => (st.own && st.own[p]) || (p === 'work' ? cfg.work : cfg.rest);
+  const total = () => mins(st.phase) * 60;
+  function adjust(d) {                           // поменять длину текущего этапа; работает, пока таймер стоит
+    if (st.running) return;
+    const m = Math.max(1, Math.min(180, mins(st.phase) + d));
+    st.own = { ...(st.own || {}), [st.phase]: m };
+    st.left = m * 60; save(); tick();
+  }
+  // note(): говорит заморозке виджетов (freeze.pyw), когда кончится отрезок и играет ли фон,
+  // чтобы она разбудила таймер к сигналу и не глушила фон. Шлём, только когда это изменилось.
+  let noted = '';
+  function note() {
+    const t = common.tools;
+    if (!t || !t.freeze_note) return;
+    const key = [st.running ? 1 : 0, st.running ? Math.round(st.endsAt) : 0, st.phase, st.amb || 'off'];
+    if (key.join() === noted) return;
+    noted = key.join();
+    exec([t.freeze_note, ...key.map(String)]).catch(() => { noted = ''; });
+  }
+  setInterval(note, 2000);
+  const save = () => { try { localStorage.setItem('pomodoro', JSON.stringify(st)); } catch (e) {} note(); };
   const today = () => new Date().toDateString();
 
   function chime() {
@@ -67,6 +104,53 @@
       });
     } catch (e) {}
   }
+  // Фон во время работы: дождь или мягкий шум, синтез в браузере (без файлов).
+  // Играет, только пока идёт этап работы. Шум «розовый» с срезанным низом, чтобы не гудел.
+  const AMB = ['off', 'rain', 'pink'], AMBN = { off: '', rain: 'дождь', pink: 'шум' };
+  let ac = null, ambNode = null, ambKind = 'off';
+  function noiseBuf(kind) {
+    const sr = ac.sampleRate, len = sr * 6, buf = ac.createBuffer(2, len, sr);
+    for (let c = 0; c < 2; c++) {
+      const d = buf.getChannelData(c);
+      let b0 = 0, b1 = 0, b2 = 0, b3 = 0, b4 = 0, b5 = 0, b6 = 0, drop = 0, dk = 0;
+      for (let i = 0; i < len; i++) {
+        const w = Math.random() * 2 - 1;
+        b0 = 0.99886 * b0 + w * 0.0555179; b1 = 0.99332 * b1 + w * 0.0750759; b2 = 0.96900 * b2 + w * 0.1538520;
+        b3 = 0.86650 * b3 + w * 0.3104856; b4 = 0.55000 * b4 + w * 0.5329522; b5 = -0.7616 * b5 - w * 0.0168980;
+        let v = (b0 + b1 + b2 + b3 + b4 + b5 + b6 + w * 0.5362) * 0.11; b6 = w * 0.115926;
+        if (kind === 'rain') {                    // капли: редкие короткие щелчки поверх шума
+          if (Math.random() < 0.0009) { drop = 0.5 + Math.random() * 0.6; dk = 0.9 + Math.random() * 0.08; }
+          v = v * 0.55 + w * drop; drop *= dk;
+        }
+        d[i] = v;
+      }
+      const f = Math.floor(sr * 0.05);            // сшивка конца с началом без щелчка
+      for (let i = 0; i < f; i++) { const k = i / f; d[i] = d[i] * k + d[len - f + i] * (1 - k); }
+    }
+    return buf;
+  }
+  function ambStop() {
+    if (!ambNode) return;
+    const n = ambNode; ambNode = null;
+    try { n.g.gain.setTargetAtTime(0, ac.currentTime, 0.4); setTimeout(() => { try { n.src.stop(); } catch (e) {} }, 2000); } catch (e) {}
+  }
+  function ambSync() {
+    const want = st.running && st.phase === 'work' ? (st.amb || 'off') : 'off';
+    if (want === ambKind && (want === 'off' || ambNode)) { if (ambNode) ambNode.g.gain.setTargetAtTime(vol(), ac.currentTime, 0.3); return; }
+    ambStop(); ambKind = want;
+    if (want === 'off') return;
+    try {
+      ac = ac || new AudioContext(); ac.resume();
+      const src = ac.createBufferSource(), hp = ac.createBiquadFilter(), lp = ac.createBiquadFilter(), g = ac.createGain();
+      src.buffer = noiseBuf(want); src.loop = true;
+      hp.type = 'highpass'; hp.frequency.value = want === 'rain' ? 500 : 250;
+      lp.type = 'lowpass'; lp.frequency.value = want === 'rain' ? 7000 : 3200;
+      g.gain.value = 0; g.gain.setTargetAtTime(vol(), ac.currentTime, 0.8);
+      src.connect(hp); hp.connect(lp); lp.connect(g); g.connect(ac.destination); src.start();
+      ambNode = { src, g };
+    } catch (e) { ambKind = 'off'; }
+  }
+  const vol = () => (cfg.ambvol ?? 35) / 100 * 0.35;
   function nextPhase(finished) {
     if (finished && st.phase === 'work') st.done++;
     st.phase = st.phase === 'work' ? 'rest' : 'work';
@@ -74,7 +158,13 @@
     st.running = finished;                      // после сигнала следующий этап идёт сам
     st.endsAt = Date.now() + st.left * 1000;
     if (finished) chime();
+    if (finished) pulse();
     save();
+  }
+  function pulse() {
+    const r = document.querySelector('.ring');
+    r.classList.remove('pulse'); void r.offsetWidth; r.classList.add('pulse');
+    setTimeout(() => r.classList.remove('pulse'), 3000);
   }
   function tick() {
     if (st.day !== today()) { st.day = today(); st.done = 0; save(); }
@@ -88,7 +178,12 @@
     $('arc').style.strokeDasharray = LEN;
     $('arc').style.strokeDashoffset = LEN * (1 - left / total());
     $('box').classList.toggle('rest', st.phase === 'rest');
+    $('box').classList.toggle('running', st.running);
     $('play').innerHTML = st.running ? '&#xE769;' : '&#xE768;';
+    $('amb').classList.toggle('on', (st.amb || 'off') !== 'off');
+    $('amb').title = 'Фон во время работы: ' + (AMBN[st.amb || 'off'] || 'выкл') + ' (клик — сменить)';
+    if (st.amb && st.amb !== 'off' && st.phase === 'work') $('phase').textContent += ' · ' + AMBN[st.amb];
+    ambSync();
     $('count').textContent = st.done ? 'сегодня: ' + st.done : '';
   }
   $('play').onclick = () => {
@@ -98,8 +193,15 @@
   };
   $('reset').onclick = () => { st.running = false; st.phase = 'work'; st.left = total(); save(); tick(); };
   $('skip').onclick = () => { nextPhase(false); tick(); };
+  $('amb').onclick = () => { st.amb = AMB[(AMB.indexOf(st.amb || 'off') + 1) % AMB.length]; save(); tick(); };
+  $('minus').onclick = () => adjust(-5);
+  $('plus').onclick = () => adjust(5);
+  $('time').addEventListener('wheel', e => { e.preventDefault(); adjust(e.deltaY < 0 ? 1 : -1); }, { passive: false });
   document.addEventListener('config', e => {
     cfg = { ...cfg, ...e.detail };
+    const seen = cfg.work + '/' + cfg.rest;        // ползунки в настройках поменяли: своё время сбрасывается
+    if (st.seen && st.seen !== seen) { st.own = {}; if (!st.running) st.left = total(); }
+    if (st.seen !== seen) { st.seen = seen; save(); }
     $('box').classList.toggle('card-bg', cfg.card !== false);
     if (!st.running) { st.left = Math.min(st.left, total()) || total(); if (st.left === 0 || st.left > total()) st.left = total(); }
     tick();

@@ -1,0 +1,58 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8" />
+<link rel="stylesheet" href="./common.css" />
+<style>
+  body { font-family: 'Segoe UI Variable Text', 'Segoe UI', sans-serif; }
+  .box { width: 312px; margin: 2px; padding: 12px 10px 10px 10px; opacity: var(--opacity, 1); }
+  .tag { font-size: 11px; letter-spacing: 1.8px; color: var(--accent); font-weight: 700; margin: 0 0 6px 6px; }
+  .grid { display: grid; grid-template-columns: repeat(4, 1fr); }
+  .cell { height: 78px; border-radius: 12px; cursor: pointer; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 5px; }
+  .cell:hover { background: rgba(255, 255, 255, 0.10); }
+  .cell:active { background: rgba(255, 255, 255, 0.18); }
+  .cell img { width: 36px; height: 36px; pointer-events: none; }
+  .cell .ph { width: 36px; height: 36px; border-radius: 10px; background: var(--accent); color: var(--pill); font: 700 18px/36px 'Segoe UI', sans-serif; text-align: center; }
+  .cell span { font-size: 11px; font-weight: 600; max-width: 66px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .hint { font-size: 12px; color: var(--muted); padding: 6px; line-height: 1.45; height: 72px; }
+</style>
+</head>
+<body data-widget="links" data-w="316">
+<div class="box card-bg shadow" id="box">
+  <div class="tag">ЯРЛЫКИ</div>
+  <div class="grid" id="grid"></div>
+</div>
+<script type="module">
+  import { exec, tools, isSelected } from './common.js';
+  // Плитка программ и папок. Список задаётся в настройках виджета, значки готовит панель настроек (папка icons).
+  let key = '';
+  function render(items) {
+    const grid = document.getElementById('grid');
+    grid.innerHTML = '';
+    for (const it of items) {
+      if (!it.path) continue;
+      const cell = document.createElement('div');
+      cell.className = 'cell click';
+      cell.title = it.path;
+      if (it.icon) { const im = document.createElement('img'); im.src = './icons/' + it.icon; cell.appendChild(im); }
+      else { const ph = document.createElement('div'); ph.className = 'ph'; ph.textContent = (it.title || '?').slice(0, 1).toUpperCase(); cell.appendChild(ph); }
+      const name = document.createElement('span');
+      name.textContent = it.title || '';
+      cell.appendChild(name);
+      cell.onclick = async () => {
+        if (isSelected() || !tools) return;
+        try { await exec([tools.launch, it.path]); } catch (e) { console.error(e); }
+      };
+      grid.appendChild(cell);
+    }
+    if (!grid.children.length) grid.outerHTML = '<div class="hint" id="grid">Здесь будут твои программы и папки. Кликни правой кнопкой по виджету и добавь их в настройках.</div>';
+  }
+  document.addEventListener('config', e => {
+    document.getElementById('box').classList.toggle('card-bg', e.detail.card !== false);
+    const items = Array.isArray(e.detail.items) ? e.detail.items : [];
+    const k = JSON.stringify(items);
+    if (k !== key) { key = k; if (!document.getElementById('grid').classList.contains('grid')) document.getElementById('grid').outerHTML = '<div class="grid" id="grid"></div>'; render(items); }
+  });
+</script>
+</body>
+</html>

@@ -11,7 +11,7 @@
   svg .fill { fill: var(--accent); stroke: none; }
   svg .acc { stroke: var(--accent); }
   .col { min-width: 0; }
-  .tag { font-size: 10px; letter-spacing: 2px; color: var(--accent); font-weight: 700; }
+  .tag { font-size: 11px; letter-spacing: 1.8px; color: var(--accent); font-weight: 700; }
   .temp { font: 700 50px 'Space Grotesk', sans-serif; line-height: 1.05; letter-spacing: -2px; }
   .temp sup { font-size: 22px; letter-spacing: 0; vertical-align: top; position: relative; top: 8px; margin-left: 2px; }
   .st { font-size: 13px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
@@ -61,7 +61,17 @@
     $('st').textContent = text;
     $('wind').textContent = w.windSpeed != null ? 'ветер ' + Math.round(w.windSpeed) + ' км/ч' : '';
   }
-  providers.onOutput(render);
+  // при входе в Windows сеть бывает ещё не готова: без этого погода висела бы на «загружаю…» до следующего часа
+  let got = false, retry = null, wait = 60000;
+  function again() {
+    if (retry) return;
+    if (!got) $('st').textContent = 'нет связи, попробую ещё';
+    retry = setTimeout(() => { retry = null; providers.restartAll?.(); }, wait);
+    wait = Math.min(wait * 2, 600000);
+  }
+  providers.onOutput(() => { got = true; wait = 60000; render(); });
+  providers.onError?.(again);
+  setTimeout(() => { if (!got) again(); }, 30000);
   document.addEventListener('config', e => $('box').classList.toggle('card-bg', e.detail.card !== false));
   $('icon').innerHTML = CLOUD;
 </script>

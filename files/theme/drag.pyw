@@ -10,6 +10,7 @@
 Привязка: при переносе виджет «прилипает» к краям и центру экрана и к краям и центрам других
 виджетов, в этот момент видна направляющая линия. Размер меняется шагами по 5%.
 Зажатый Shift временно отключает привязку. Совсем выключить - галочка в панели «Виджеты».
+Работает только в режиме редактирования (пока открыта панель «Виджеты»).
 
 Новое место и размер записываются в widgets.json и zpack.json, поэтому сохраняются после перезагрузки."""
 import os, sys, time, ctypes
@@ -231,7 +232,12 @@ end = time.time() + 1800                      # страховка: через �
 if lbutton():                                 # клик, которым виджет выделили: сразу можно тащить
     act()
 was_down = lbutton()
+checked = time.time()
 while time.time() < end and u.IsWindow(hwnd):
+    if time.time() - checked > 0.7 and not lbutton():           # режим редактирования выключили: снять выделение
+        checked = time.time()
+        if not W.load()["all"].get("edit"):
+            break
     down = lbutton()
     if down and not was_down and not act():
         break
