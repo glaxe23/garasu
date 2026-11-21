@@ -1,0 +1,79 @@
+name: Garasu installer
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'files/**'
+      - 'scripts/build_release.py'
+      - 'scripts/exe_icon.py'
+      - '.github/workflows/garasu-release.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'files/theme/version.txt'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: windows-2025
+    timeout-minutes: 15
+    outputs:
+      release_tag: ${{ steps.version.outputs.tag }}
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
+        with:
+          python-version: '3.13'
+      - name: Validate release version
+        if: github.event_name == 'push'
+        id: version
+        shell: pwsh
+        run: |
+          $version = (Get-Content -Raw -LiteralPath 'files/theme/version.txt').Trim()
+          if ($version -cnotmatch '^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(\.(0|[1-9][0-9]*))?$') {
+            throw 'Expected a release version such as 1.5 or 1.5.1.'
+          }
+          "tag=Garasu_v$version" >> $env:GITHUB_OUTPUT
+      - name: Build and verify the installer
+        run: |
+          python -m pip install Pillow==12.0.0
+          python scripts/build_release.py --output dist
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: garasu-installer
+          path: |
+            dist/Garasu-Setup.exe
+            dist/Garasu.zip
+          if-no-files-found: error
+
+  publish:
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    concurrency:
+      group: garasu-release-${{ needs.build.outputs.release_tag }}
+      cancel-in-progress: false
+    steps:
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: garasu-installer
+          path: dist
+      - name: Publish GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GARASU_TAG: ${{ needs.build.outputs.release_tag }}
+        shell: bash
+        run: |
+          gh release create "$GARASU_TAG" dist/Garasu-Setup.exe dist/Garasu.zip \
+            --repo "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" \
+            --title "Garasu ${GARASU_TAG#Garasu_v}" --generate-notes
+

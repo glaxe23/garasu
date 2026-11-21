@@ -55,7 +55,7 @@ widgets:
     type: "yasb.wallpapers.WallpapersWidget"
     options:
       label: "<span>\ue7aa</span>"
-      image_path: "C:/Users/amn/Pictures" 
+      image_path: "." 
       engine:
         enabled: true
         animation: "split"
