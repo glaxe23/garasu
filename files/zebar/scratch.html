@@ -1,0 +1,45 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8" />
+<link rel="stylesheet" href="./common.css" />
+<style>
+  body { font-family: 'Segoe UI Variable Text', 'Segoe UI', sans-serif; }
+  .box { width: 296px; height: 192px; margin: 2px; padding: 14px 18px 12px 18px; opacity: var(--opacity, 1);
+         box-sizing: border-box; display: flex; flex-direction: column; cursor: text; }
+  .tag { font-size: 11px; letter-spacing: 1.8px; color: var(--accent); font-weight: 700; margin-bottom: 8px; }
+  .txt { flex: 1; overflow: hidden; font-size: 13px; line-height: 1.45; white-space: pre-wrap; word-break: break-word;
+         -webkit-mask-image: linear-gradient(180deg, #000 78%, transparent); }
+  .txt.empty { color: var(--muted); }
+</style>
+</head>
+<body data-widget="scratch" data-w="300">
+<div class="box card-bg shadow" id="box">
+  <div class="tag">ЧЕРНОВИК</div>
+  <div class="txt click" id="txt"></div>
+</div>
+<script type="module">
+  import { read, exec } from './common.js';
+  import * as common from './common.js';
+  // Черновик: показывает scratch.txt, клик открывает окно ввода (scratch_edit.pyw), текст сохраняется сам.
+  const el = document.getElementById('txt');
+  let last = null;
+  async function load() {
+    const t = await read('scratch.txt');
+    if (t === last) return;
+    last = t;
+    el.textContent = t.trim() ? t : 'Кликни, чтобы записать мысль.';
+    el.classList.toggle('empty', !t.trim());
+  }
+  el.addEventListener('click', async () => {
+    const tl = common.tools;
+    if (tl && tl.scratch) { try { await exec([tl.scratch]); } catch (e) {} load(); }
+  });
+  document.addEventListener('config', e => {
+    document.getElementById('box').classList.toggle('card-bg', e.detail.card !== false);
+  });
+  load();
+  setInterval(load, 2000);
+</script>
+</body>
+</html>

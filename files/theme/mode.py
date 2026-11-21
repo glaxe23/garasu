@@ -62,8 +62,17 @@ def stop_helper():
        "ForEach-Object { Stop-Process -Id $_.ProcessId -Force }")
 
 
+def stop_freeze():
+    ps("$a='freeze'+'.pyw'; Get-CimInstance Win32_Process | Where-Object { "
+       "$_.Name -eq 'pythonw.exe' -and $_.CommandLine -like \"*$a*\" } | "
+       "ForEach-Object { Stop-Process -Id $_.ProcessId -Force }")
+
+
 def start_helper():
     subprocess.Popen([W.PYW, os.path.join(here, "helper.pyw")], cwd=here, creationflags=NOWIN | 0x00000008)
+    # заморозка виджетов, пока их не видно (freeze.pyw); новый запуск сам будит всё, что заморозил прежний
+    stop_freeze()
+    subprocess.Popen([W.PYW, os.path.join(here, "freeze.pyw")], cwd=here, creationflags=NOWIN | 0x00000008)
 
 
 def glaze_paused():
@@ -111,7 +120,9 @@ def switch(new):
                 o["power_prev"] = cur
         save_options(o)
         run(["taskkill", "/f", "/im", "zebar.exe"])
+        W.stop_classic()                                 # Qt-виджеты (Garasu Classic) тоже выключаем
         stop_helper()
+        stop_freeze()
         open(os.path.join(here, "bar_focus.txt"), "w").close()
         run([sys.executable, os.path.join(here, "ryoku.py")])          # короткая панель без дока
         glaze_pause(True)

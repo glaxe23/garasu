@@ -1,5 +1,5 @@
 """Панель выбора режима Garasu: повседневный, рабочий, игровой. Открывается кнопкой режима на панели.
-Клик по карточке включает режим. Закрыть: Esc, клик мимо или повторный клик по кнопке."""
+Клик по карточке или клавиши 1-3 включают режим. Закрыть: Esc, клик мимо или повторный клик по кнопке."""
 import os, sys, ctypes, subprocess
 from ctypes import wintypes
 
@@ -18,7 +18,7 @@ except Exception:
 import tkinter as tk
 here = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, here)
-import ui, mode as M
+import ui, glass, mode as M
 
 C = ui.colors()
 BG, FG, MUTED, ACC, TROUGH = C["BG"], C["FG"], C["MUTED"], C["ACC"], C["TROUGH"]
@@ -30,7 +30,7 @@ win = tk.Tk()
 win.title(TITLE)
 win.overrideredirect(True)
 win.attributes("-topmost", True)
-win.attributes("-alpha", 0.94)
+ui.hidden(win, 0.94)
 win.configure(bg=BG)
 SW = win.winfo_screenwidth()
 WIDTH = 420
@@ -40,7 +40,7 @@ head = tk.Frame(body, bg=BG)
 head.pack(fill="x", pady=(0, 8))
 tk.Label(head, text="硝", font=(FONT, 15, "bold"), bg=BG, fg=ACC).pack(side="left")
 tk.Label(head, text="  РЕЖИМ", font=(FONT, 10, "bold"), bg=BG, fg=FG).pack(side="left")
-status = tk.Label(head, text="", font=(FONT, 9), bg=BG, fg=MUTED)
+status = tk.Label(head, text="1–%d — выбрать" % len(M.MODES), font=(FONT, 9), bg=BG, fg=MUTED)
 status.pack(side="left", padx=12)
 
 
@@ -68,24 +68,29 @@ for name, (title, text) in M.MODES.items():
     for w in (card, ico, col, t, d):
         w.bind("<Button-1>", lambda e, n=name: choose(n))
 
-auto = tk.Label(body, font=(FONT, 9), bg=BG, fg=MUTED, cursor="hand2", anchor="w")
-auto.pack(fill="x", pady=(8, 0))
+auto_row = tk.Frame(body, bg=BG, cursor="hand2")
+auto_row.pack(fill="x", pady=(8, 0))
+auto = tk.Label(auto_row, text="Игровой режим сам при запуске игры из Steam", font=(FONT, 9), bg=BG, fg=MUTED,
+                cursor="hand2", anchor="w")
 
 
 def auto_text():
-    on = M.options().get("auto_game", True)
-    auto.configure(text="Игровой режим сам при запуске игры из Steam:  " + ("вкл" if on else "выкл"),
-                   fg=FG if on else MUTED)
+    auto.configure(fg=FG if M.options().get("auto_game", True) else MUTED)
 
 
-def auto_toggle(e):
+def auto_set(on):
     o = M.options()
-    o["auto_game"] = not o.get("auto_game", True)
+    o["auto_game"] = bool(on)
     M.save_options(o)
     auto_text()
 
 
-auto.bind("<Button-1>", auto_toggle)
+auto_sw = glass.Toggle(auto_row, M.options().get("auto_game", True), auto_set, bg=BG, fg=FG, accent=ACC,
+                       muted=MUTED, scale=.9)
+auto_sw.pack(side="left")
+auto.pack(side="left", padx=(6, 0))
+for w in (auto_row, auto):
+    w.bind("<Button-1>", lambda e: auto_sw.set(not auto_sw.on, animate=True, notify=True))
 auto_text()
 
 win.update_idletasks()
@@ -96,6 +101,10 @@ try:
 except Exception:
     pass
 win.bind("<Escape>", lambda e: win.destroy())
+for i, name in enumerate(M.MODES, 1):          # 1, 2, 3 - режимы по порядку карточек
+    win.bind(str(i), lambda e, n=name: choose(n))
+    win.bind("<KP_%d>" % i, lambda e, n=name: choose(n))
 win.bind("<FocusOut>", lambda e: win.after(150, lambda: win.focus_displayof() is None and win.destroy()))
 win.after(80, lambda: (win.lift(), win.focus_force()))
+ui.live(win)                      # плавная подсветка кнопок и ссылок при наведении
 win.mainloop()

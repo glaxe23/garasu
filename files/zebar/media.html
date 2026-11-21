@@ -12,6 +12,9 @@
     opacity: 0; transform: translateY(8px); transition: opacity 0.4s, transform 0.4s, background 0.6s;
   }
   .card.on { opacity: var(--opacity, 0.96); transform: none; }
+  /* сплошной фон вместо стекла (настройка «Сплошной фон») */
+  .card.solid { background: var(--pill); border: 1px solid var(--line); border-radius: var(--radius, 26px);
+                box-shadow: 0 18px 46px rgba(0, 0, 0, 0.30); }
   .top { display: flex; gap: 18px; height: 150px; flex: none; }
   .art {
     flex: none; width: 150px; height: 150px; border-radius: 10px; overflow: hidden; position: relative;
@@ -31,22 +34,34 @@
   .title { margin-top: 12px; font-size: 19px; font-weight: 700; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .artist { font-size: 13px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; margin-top: 2px; min-height: 18px; }
   #bars { display: block; width: 482px; height: 50px; margin-top: auto; flex: none; }
-  .prog { height: 3px; border-radius: 2px; background: rgba(255, 255, 255, 0.14); margin: 6px 0 4px 0; overflow: hidden; flex: none; }
-  .prog i { display: block; height: 100%; width: 0; background: var(--accent); border-radius: 2px; }
+  .prog { height: 3px; border-radius: 2px; background: rgba(255, 255, 255, 0.14); margin: 6px 0 4px 0; flex: none; }
+  /* под заливкой мягкое свечение; полоска скруглена, поэтому и свечение с круглыми концами */
+  .prog i { display: block; height: 100%; width: 0; max-width: 100%; background: var(--accent); border-radius: 2px;
+            box-shadow: 0 0 7px var(--halo); }
   .ctl { display: flex; align-items: center; gap: 8px; height: 42px; flex: none; }
   .time { font: 600 12px 'Space Grotesk', sans-serif; color: var(--muted); min-width: 86px; }
   .vol { margin-left: auto; margin-right: 10px; display: flex; align-items: center; gap: 7px; height: 30px; padding: 0 4px; cursor: default; }
   .vol span { font: 13px 'Segoe Fluent Icons', 'Segoe MDL2 Assets'; color: var(--fg); width: 16px; text-align: center; }
   .vol b { font: 600 11px 'Space Grotesk', sans-serif; color: var(--muted); width: 22px; text-align: right; }
-  input[type=range] { -webkit-appearance: none; appearance: none; width: 110px; height: 18px; background: transparent; cursor: pointer; margin: 0; }
+  /* Ползунок громкости в стиле панелей: свечение под заливкой, ореол вокруг кружка при наведении,
+     при нажатии кружок чуть растёт, а ореол расходится волной. Всё на transition: в покое ничего не крутится. */
+  .rng { position: relative; width: 110px; height: 18px; flex: none; }
+  .rng .glow { position: absolute; left: 0; top: 7px; height: 4px; width: var(--v, 50%); border-radius: 2px; pointer-events: none;
+               box-shadow: 0 0 8px var(--halo); opacity: 0.55; transition: opacity 0.25s ease; }
+  .rng:hover .glow { opacity: 1; }
+  input[type=range] { -webkit-appearance: none; appearance: none; position: relative; width: 110px; height: 18px; background: transparent; cursor: pointer; margin: 0; }
   input[type=range]::-webkit-slider-runnable-track {
     height: 4px; border-radius: 2px;
     background: linear-gradient(to right, var(--accent) var(--v, 50%), rgba(255, 255, 255, 0.18) var(--v, 50%));
   }
   input[type=range]::-webkit-slider-thumb {
     -webkit-appearance: none; width: 12px; height: 12px; border-radius: 6px; margin-top: -4px;
-    background: var(--fg); border: none; box-shadow: 0 1px 4px rgba(0, 0, 0, 0.4);
+    background: var(--fg); border: none; box-shadow: 0 1px 4px rgba(0, 0, 0, 0.4), 0 0 0 0 var(--halo-soft);
+    transition: transform 0.18s cubic-bezier(0.3, 1.6, 0.5, 1), box-shadow 0.3s ease;
   }
+  .rng:hover input[type=range]::-webkit-slider-thumb { box-shadow: 0 1px 4px rgba(0, 0, 0, 0.4), 0 0 0 5px var(--halo-soft), 0 0 12px var(--halo); }
+  input[type=range]:active::-webkit-slider-thumb { transform: scale(1.18); box-shadow: 0 1px 4px rgba(0, 0, 0, 0.4), 0 0 0 8px var(--halo-soft), 0 0 14px var(--halo); }
+  html.noanim .rng .glow, html.noanim input[type=range]::-webkit-slider-thumb { transition: none; }
   button {
     font-family: 'Segoe Fluent Icons', 'Segoe MDL2 Assets'; font-size: 12px;
     width: 30px; height: 30px; border-radius: 15px; border: none; cursor: pointer;
@@ -71,7 +86,7 @@
     <span class="time" id="time"></span>
     <div class="vol click" id="volBox">
       <span id="volIcon">&#xE995;</span>
-      <input type="range" id="vol" min="0" max="100" step="1" value="50">
+      <div class="rng"><i class="glow"></i><input type="range" id="vol" min="0" max="100" step="1" value="50"></div>
       <b id="volNum"></b>
     </div>
     <button id="prev" title="Предыдущий">&#xE892;</button>
@@ -129,7 +144,7 @@
   // ---- громкость: ползунок и колёсико мыши над карточкой
   function setVolUi(v) {
     $('vol').value = v;
-    $('vol').style.setProperty('--v', v + '%');
+    $('volBox').style.setProperty('--v', v + '%');      // и заливка дорожки, и свечение под ней читают --v отсюда
     $('volNum').textContent = v;
     $('volIcon').innerHTML = v === 0 ? '&#xE74F;' : v < 34 ? '&#xE993;' : v < 67 ? '&#xE994;' : '&#xE995;';
   }
@@ -281,6 +296,8 @@
   }
 
   document.addEventListener('config', e => {
+    $('card').classList.toggle('solid', !!e.detail.solid);
+    $('card').classList.toggle('card-bg', !e.detail.solid);
     cfg = { ...cfg, ...e.detail };
     $('art').style.display = cfg.art === false ? 'none' : '';
     $('lyr').style.visibility = cfg.lyrics ? 'visible' : 'hidden';

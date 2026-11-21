@@ -6,11 +6,17 @@
 <style>
   .ph {
     position: relative; width: 296px; height: 396px; margin: 2px;
-    border-radius: 16px; overflow: hidden; opacity: var(--opacity, 1);
+    border-radius: var(--radius, 26px); overflow: hidden; opacity: var(--opacity, 1);
   }
   .ph.border { border: 8px solid rgba(255, 255, 255, 0.16); outline: 1px solid rgba(255, 255, 255, 0.30); outline-offset: -1px; }
   .ph img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; opacity: 0; transition: opacity 1.2s; -webkit-user-drag: none; }
   .ph img.on { opacity: 1; }
+  /* в цвет темы: оттенок фото тянется к акценту (режим color не трогает яркость), снизу мягкая подсветка тем же цветом */
+  .ph .tint, .ph .shade { position: absolute; inset: 0; pointer-events: none; opacity: var(--tint, 0.35);
+                          transition: opacity 0.6s, background 0.8s; }
+  .ph .tint { background: var(--accent); mix-blend-mode: color; }
+  .ph .shade { background: linear-gradient(to top, color-mix(in srgb, var(--accent) 35%, transparent), transparent 60%);
+               mix-blend-mode: soft-light; }
   .empty { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; text-align: center;
            padding: 24px; font: 500 13px 'Segoe UI Variable Text', 'Segoe UI', sans-serif; color: var(--muted); }
 </style>
@@ -19,6 +25,7 @@
 <div class="ph border card-bg" id="ph">
   <div class="empty" id="empty">Положи картинки в папку<br>C:\garasu\photos</div>
   <img id="a" alt=""><img id="b" alt="">
+  <div class="tint"></div><div class="shade"></div>
 </div>
 <script type="module">
   import { read } from './common.js';
@@ -54,6 +61,8 @@
   }
   document.addEventListener('config', e => {
     document.getElementById('ph').classList.toggle('border', e.detail.border !== false);
+    const tint = { off: 0, soft: 0.35, strong: 0.6 }[e.detail.tint || 'soft'];
+    document.getElementById('ph').style.setProperty('--tint', tint ?? 0.35);
     if (e.detail.interval && e.detail.interval !== interval) { interval = e.detail.interval; restart(); }
   });
   load();

@@ -10,6 +10,7 @@
 """
 import os, re, sys, json, shutil, ctypes, winreg, yaml
 from palette import palette
+import fonts
 
 here = os.path.dirname(os.path.abspath(__file__))
 root = os.path.dirname(here)
@@ -96,7 +97,19 @@ def set_wallpaper(path):
     winreg.SetValueEx(k, "WallpaperStyle", 0, winreg.REG_SZ, "10")   # заполнение
     winreg.SetValueEx(k, "TileWallpaper", 0, winreg.REG_SZ, "0")
     winreg.CloseKey(k)
-    ctypes.windll.user32.SystemParametersInfoW(20, 0, path, 3)
+    try:                                   # «Плавные обои» и «Анимации» из панели виджетов
+        a = json.load(open(os.path.join(zdir, "widgets.json"), encoding="utf-8"))["all"]
+        smooth = a.get("anim", True) and a.get("wallfade", True)
+    except Exception:
+        smooth = True
+    if smooth:
+        try:
+            import wallfade
+            if wallfade.set(path):
+                return
+        except Exception:
+            pass
+    ctypes.windll.user32.SystemParametersInfoW(20, 0, path, 3)   # старый способ: рывком, но всегда работает
 
 
 if len(sys.argv) > 1 and sys.argv[1] == "list":
@@ -123,15 +136,15 @@ glow = mix(c["primaryFixed"], "#ffffff", 0.45)     # светлый цвет д�
 # Виджеты лежат прямо на обоях, поэтому «матовое стекло» делается так: заранее размытая копия обоев
 # кладётся фоном карточки и совмещается с экраном. Выглядит как настоящее размытие того, что позади.
 SCREEN = (ctypes.windll.user32.GetSystemMetrics(0), ctypes.windll.user32.GetSystemMetrics(1))
-glass_tint = rgba(mix(pill, accent, 0.10), 0.46)      # затемнение стекла, чтобы текст читался на любых обоях
-glass_edge = "rgba(255, 255, 255, 0.24)"
+glass_tint = rgba(mix(pill, accent, 0.16), 0.38)      # затемнение стекла с оттенком темы, чтобы текст читался на любых обоях
+glass_edge = "rgba(255, 255, 255, 0.11)"            # тонкая кромка: карточка не должна выглядеть коробкой
 bar_glass = rgba(mix(pill, accent, 0.08), 0.58)       # «таблетки» панели: полупрозрачные (размыть фон под ними YASB не умеет)
 bar_glass_hi = rgba(mix(pill_hi, accent, 0.10), 0.74)
 if os.path.isdir(zdir):
     try:
         from PIL import Image, ImageOps, ImageFilter
-        im = ImageOps.fit(Image.open(wall).convert("RGB"), (SCREEN[0] // 2, SCREEN[1] // 2), Image.LANCZOS)
-        im.filter(ImageFilter.GaussianBlur(16)).save(os.path.join(zdir, "glass.jpg"), quality=85)
+        im = ImageOps.fit(Image.open(wall).convert("RGB"), (SCREEN[0] // 3, SCREEN[1] // 3), Image.LANCZOS)
+        im.filter(ImageFilter.GaussianBlur(18)).save(os.path.join(zdir, "glass.jpg"), quality=80, optimize=True)
     except Exception as e:
         print("glass:", e)
 
@@ -148,10 +161,13 @@ w["quick_launch"]["options"]["label"] = "硝"
 w["quick_launch"]["options"]["search_placeholder"] = "Поиск приложений..."
 w["taskbar"]["options"]["show_only_visible"] = False
 w["taskbar"]["options"]["icon_size"] = 22
+# док: левый клик — переключить окно, колёсико — закрыть (как вкладку в браузере), правый — меню
+w["taskbar"]["options"]["callbacks"] = {"on_left": "toggle_window", "on_middle": "close_app", "on_right": "context_menu"}
 w["clock"]["options"]["label"] = "<span>\ue823</span> {%H:%M  %a %d}"
 w["clock"]["options"]["callbacks"] = {"on_left": 'exec %s "%s"' % (PYW, CALENDAR),
                                      "on_middle": "toggle_label", "on_right": "toggle_calendar"}
-w["clock"]["options"]["label_alt"] = "{%A, %d %B %Y}"
+w["clock"]["options"]["label_alt"] = "{%A, %d.%m.%Y}"
+w["clock"]["options"]["locale"] = "ru_RU"           # дни недели по-русски: «Пт 20» вместо «Fri 20»
 w["glazewm_workspaces"] = {
     "type": "glazewm.workspaces.GlazewmWorkspacesWidget",
     "options": {"offline_label": "", "hide_if_offline": True, "monitor_exclusive": False},
@@ -235,25 +251,37 @@ w["show_desktop"] = {"type": "yasb.custom.CustomWidget", "options": {
     "callbacks": {"on_left": 'exec %s "%s"' % (PYW, DESKTOP), "on_middle": "do_nothing", "on_right": "do_nothing"},
     "exec_options": {"run_cmd": None, "run_once": True, "return_format": "string", "use_shell": True}}}
 
+# перезапуск виджетов, если они пропали или зависли
+w["reload"] = {"type": "yasb.custom.CustomWidget", "options": {
+    "label": "<span>\ue72c</span>", "class_name": "reload-widget",
+    "tooltip": True, "tooltip_label": "Перезапустить виджеты (если пропали или зависли)",
+    "callbacks": {"on_left": 'exec %s "%s"' % (PYW, os.path.join(here, "widgets.py").replace("\\", "/")),
+                  "on_middle": "do_nothing", "on_right": "do_nothing"},
+    "exec_options": {"run_cmd": None, "run_once": True, "return_format": "string", "use_shell": True}}}
+
 top = cfg["bars"]["primary-bar"]
 top.pop("style", None)
 top["screens"] = ["*"]
 top["blur_effect"] = {"enabled": False, "dark_mode": False, "round_corners": False, "border_color": "None"}
 top["dimensions"] = {"width": "100%", "height": 38}
 top["padding"] = {"top": 4, "left": 8, "bottom": 0, "right": 8}
+# окно во весь экран (видео, игра) закрывает бар: YASB прячет его, пока такое окно активно
+top.setdefault("window_flags", {})["hide_on_fullscreen"] = True
 top["widgets"] = {
     "left": ["quick_launch", "glazewm_workspaces", "focus"],
-    "center": ["clock", "cpu", "memory", "claude"],
-    "right": ["systray", "volume", "language", "mode", "theme", "control_center"],
+    # статус Claude Code показывается только там, где он установлен (есть папка ~/.claude)
+    "center": ["clock", "cpu", "memory"] + (["claude"] if os.path.isdir(os.path.join(home, ".claude")) else []),
+    "right": ["systray", "volume", "language", "reload", "mode", "theme", "control_center"],
 }
 dock = json.loads(json.dumps(top))
 dock["class_name"] = "yasb-dock"
-dock["alignment"] = {"position": "bottom", "align": "center"}
+dock["alignment"] = {"position": "bottom", "align": "left" if OPTS.get("dock_align") == "left" else "center"}
 # два режима: «прячется» (выезжает, когда подводишь мышь к нижнему краю) и «всегда виден»
 # (тогда док резервирует место внизу экрана, и окна под него не заходят)
-dock["window_flags"] = {"always_on_top": True, "windows_app_bar": DOCK_ALWAYS, "auto_hide": not DOCK_ALWAYS}
+dock["window_flags"] = {"always_on_top": True, "windows_app_bar": DOCK_ALWAYS, "auto_hide": not DOCK_ALWAYS,
+                       "hide_on_fullscreen": True}
 dock["dimensions"] = {"width": 620, "height": 50}
-dock["padding"] = {"top": 0, "left": 0, "bottom": 8, "right": 0}
+dock["padding"] = {"top": 0, "left": 12 if OPTS.get("dock_align") == "left" else 0, "bottom": 8, "right": 0}
 dock["widgets"] = {"left": [], "center": ["show_desktop", "taskbar", "media"], "right": []}
 if MODE == "game":          # игровой режим: короткая панель без дока и анимаций
     dock["enabled"] = False
@@ -265,7 +293,8 @@ cfg["bars"] = {"primary-bar": top, "dock": dock}
 os.makedirs(ydir, exist_ok=True)
 with open(os.path.join(ydir, "config.yaml"), "w", encoding="utf-8") as f:
     f.write("# Сгенерировано ryoku.py (C:/garasu/theme), правки лучше делать там\n")
-    yaml.safe_dump(fix(cfg), f, allow_unicode=True, sort_keys=False, default_flow_style=False)
+    # на Windows 10 значки, которых нет в её шрифте, заменяются похожими (fonts.py)
+    f.write(fonts.icons_text(yaml.safe_dump(fix(cfg), allow_unicode=True, sort_keys=False, default_flow_style=False)))
 
 # ---------------------------------------------------------------- YASB: стили
 css = open(os.path.join(here, "islands.base.css"), encoding="utf-8").read()
@@ -334,14 +363,26 @@ css += f"""
 .claude-widget .label {{ color: {fg}; }}
 .mode-widget .label {{ color: {accent}; }}
 .mode-widget .icon {{ color: {accent}; }}
+.reload-widget .icon {{ color: {fg}; font-size: 12px; padding: 0 2px; }}
 .show-desktop-widget .icon {{ color: {fg}; font-size: 15px; padding: 0 3px; }}
 .show-desktop-widget:hover .icon {{ color: {accent}; }}
 
 /* док снизу */
 .yasb-dock .widget {{ border-radius: 14px; margin: 0 4px; padding: 0 6px; }}
-.taskbar-widget .app-container {{ margin: 5px 2px; border-radius: 9px; padding: 0 7px; }}
+.taskbar-widget .app-container {{
+    margin: 5px 2px; border-radius: 9px; padding: 0 7px;
+    /* плавный подъём иконки при наведении (движок переходов YASB, qt-css-engine) */
+    transition: margin-top 220ms cubic-bezier(0.25, 1.25, 0.5, 1), margin-bottom 220ms cubic-bezier(0.25, 1.25, 0.5, 1),
+                background-color 180ms ease, opacity 250ms ease;
+}}
+/* «живой док»: закреплённые, но не запущенные — тише всех, свёрнутые — приглушены */
+.taskbar-widget .app-container.pinned {{ opacity: 0.45; }}
+.taskbar-widget .app-container.minimized {{ opacity: 0.55; }}
 .taskbar-widget .app-container.foreground {{ background-color: {rgba(accent, 0.28)}; padding: 0 7px; }}
-.taskbar-widget .app-container:hover {{ background-color: rgba(255, 255, 255, 0.14); }}
+/* наведение: иконка поднимается на 4px (сумма отступов та же, поэтому соседи не сдвигаются) */
+.taskbar-widget .app-container:hover {{ background-color: rgba(255, 255, 255, 0.14); margin-top: 1px; margin-bottom: 9px; opacity: 1; }}
+/* нажатие: иконка проседает на 3px и пружинит обратно, когда отпускаешь */
+.taskbar-widget .app-container:pressed {{ margin-top: 4px; margin-bottom: 6px; background-color: rgba(255, 255, 255, 0.20); }}
 .media-lite-widget .title {{ color: {fg}; font-size: 11px; font-weight: 700; }}
 .media-lite-widget .artist {{ color: {muted}; font-size: 10px; }}
 .media-lite-widget .thumbnail {{ margin-right: 6px; }}
@@ -390,7 +431,7 @@ css += f"""
     background: {fg}; width: 10px; height: 10px; margin: -3px 0; border-radius: 5px;
 }}
 """
-open(os.path.join(ydir, "styles.css"), "w", encoding="utf-8").write(css)
+open(os.path.join(ydir, "styles.css"), "w", encoding="utf-8").write(fonts.css(css))   # Windows 10: свои шрифты
 
 # ---------------------------------------------------------------- Zebar: цвета виджетов
 if os.path.isdir(zdir):
@@ -422,6 +463,17 @@ if os.path.exists(gz):
                        stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
     except Exception:
         pass
+
+# ---------------------------------------------------------------- Проводник: стекло и акцент (мод Windhawk, если стоит)
+try:
+    import subprocess
+    subprocess.Popen([sys.executable, os.path.join(os.path.dirname(os.path.abspath(__file__)), "explorer_style.py")],
+                     creationflags=0x08000000, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    # «Пуск»: стекло и акцент под тему (мод Windhawk Start Menu Styler, запись через задачу RyokuStyle)
+    subprocess.Popen([sys.executable, os.path.join(os.path.dirname(os.path.abspath(__file__)), "start_style.py")],
+                     creationflags=0x08000000, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+except Exception:
+    pass
 
 if not os.environ.get("RYOKU_DRYRUN"):
     set_wallpaper(wall)

@@ -2,6 +2,7 @@
 
   python tasks.py sync            - прочитать заметку и записать tasks.json для виджета
   python tasks.py toggle <строка> - отметить задачу в этой строке заметки выполненной / невыполненной
+  python tasks.py add <текст>     - дописать новую задачу в заметку (после последней задачи)
 
 Задача - строка вида «- [ ] текст» или «- [x] текст». Меняется только символ в скобках."""
 import os, re, sys, json
@@ -60,9 +61,38 @@ def toggle(n):
         pass
 
 
+def add(text):
+    text = " ".join(text.split())
+    if not text:
+        return
+    cfg = W.load()
+    note = cfg["tasks"]["note"]
+    try:
+        lines = read(note)
+    except FileNotFoundError:
+        os.makedirs(os.path.dirname(note), exist_ok=True)
+        lines = ["# Задачи", "", ""]
+    cr = "\r" if any(l.endswith("\r") for l in lines) else ""
+    last = max((i for i, l in enumerate(lines) if RX.match(l.rstrip("\r"))), default=None)
+    new = "- [ ] " + text + cr
+    if last is None:
+        while lines and not lines[-1].strip():
+            lines.pop()
+        lines += ([cr] if lines else []) + [new, ""]
+    else:
+        if not lines[last].endswith("\r") and cr and last == len(lines) - 1:
+            lines[last] += cr
+        lines.insert(last + 1, new)
+    with open(note, "w", encoding="utf-8", newline="") as f:
+        f.write("\n".join(lines))
+    sync(cfg)
+
+
 if __name__ == "__main__":
     if len(sys.argv) > 2 and sys.argv[1] == "toggle":
         toggle(int(sys.argv[2]))
+    elif len(sys.argv) > 2 and sys.argv[1] == "add":
+        add(" ".join(sys.argv[2:]))
     else:
         d = sync()
         if sys.stdout:

@@ -1,0 +1,102 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8" />
+<link rel="stylesheet" href="./common.css" />
+<style>
+  body { font-family: 'Segoe UI Variable Text', 'Segoe UI', sans-serif; font-size: 14px; }
+  .box { width: 326px; height: 296px; margin: 2px; padding: 14px 16px 12px 16px; opacity: var(--opacity, 1); overflow: hidden; }
+  .head { display: flex; align-items: baseline; gap: 8px; margin-bottom: 8px; }
+  .tag { font-size: 11px; letter-spacing: 1.8px; color: var(--accent); font-weight: 700; }
+  .day { font-size: 11px; color: var(--muted); flex: 1; }
+  .left { font: 600 12px 'Space Grotesk', sans-serif; color: var(--fg); }
+  .pair { display: flex; gap: 12px; align-items: center; padding: 6px 8px; border-radius: 10px; position: relative; overflow: hidden; }
+  .pair + .pair { margin-top: 2px; }
+  .time { font: 600 12px/1.25 'Space Grotesk', sans-serif; color: var(--muted); min-width: 40px; text-align: right; }
+  .time b { display: block; color: var(--fg); font-size: 14px; font-weight: 700; }
+  .txt { min-width: 0; flex: 1; }
+  .name { font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .place { font-size: 11px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .pair.past { opacity: 0.45; }
+  .pair.now { background: color-mix(in srgb, var(--accent) 20%, transparent); }
+  .pair.now .name { color: var(--glow); }
+  .pair i { position: absolute; left: 0; bottom: 0; height: 2px; background: var(--accent); }
+  .hint { font-size: 12px; color: var(--muted); padding: 8px 2px; line-height: 1.45; }
+  .more { font-size: 11px; color: var(--muted); padding: 4px 8px; }
+</style>
+</head>
+<body data-widget="schedule" data-w="330">
+<div class="box card-bg shadow" id="box">
+  <div class="head"><span class="tag">РАСПИСАНИЕ</span><span class="day" id="day"></span><span class="left" id="left"></span></div>
+  <div id="list"></div>
+</div>
+<script type="module">
+  import { read } from './common.js';
+  // Пары на сегодня из schedule.json (его пишет помощник из заметки). Идущая пара подсвечена, под ней полоска времени.
+  const NAMES = ['понедельник', 'вторник', 'среда', 'четверг', 'пятница', 'суббота', 'воскресенье'];
+  const hm = m => String(Math.floor(m / 60)).padStart(2, '0') + ':' + String(m % 60).padStart(2, '0');
+  const word = n => n % 10 === 1 && n % 100 !== 11 ? 'пара' : n % 10 >= 2 && n % 10 <= 4 && (n % 100 < 10 || n % 100 >= 20) ? 'пары' : 'пар';
+  let data = null, last = '';
+
+  function render() {
+    const now = new Date(), wd = (now.getDay() + 6) % 7, min = now.getHours() * 60 + now.getMinutes();
+    const list = document.getElementById('list');
+    document.getElementById('day').textContent = NAMES[wd];
+    document.getElementById('left').textContent = '';
+    list.innerHTML = '';
+    if (!data) return;
+    if (data.error) { list.innerHTML = '<div class="hint"></div>'; list.firstChild.textContent = data.error; return; }
+    const days = data.days || {}, today = days[wd] || [];
+    const total = Object.values(days).reduce((a, d) => a + d.length, 0);
+    if (!total) { list.innerHTML = '<div class="hint">В заметке пока нет пар. Открой заметку с расписанием и впиши свои: день недели, под ним строки вида «08:30-10:00 Предмет, аудитория».</div>'; return; }
+    const shown = today.slice(0, 5);
+    for (const p of shown) {
+      const row = document.createElement('div');
+      const state = min >= p.to ? 'past' : min >= p.from ? 'now' : '';
+      row.className = 'pair ' + state;
+      row.innerHTML = '<div class="time"><b></b><span></span></div><div class="txt"><div class="name"></div><div class="place"></div></div>';
+      row.querySelector('b').textContent = hm(p.from);
+      row.querySelector('.time span').textContent = hm(p.to);
+      row.querySelector('.name').textContent = p.title;
+      row.querySelector('.place').textContent = p.place || '';
+      if (state === 'now') {
+        const bar = document.createElement('i');
+        bar.style.width = ((min - p.from) / Math.max(1, p.to - p.from) * 100) + '%';
+        row.appendChild(bar);
+        document.getElementById('left').textContent = 'ещё ' + (p.to - min) + ' мин';
+      }
+      list.appendChild(row);
+    }
+    if (today.length > shown.length) { const m = document.createElement('div'); m.className = 'more'; m.textContent = 'и ещё ' + (today.length - shown.length); list.appendChild(m); }
+    const next = today.find(p => p.from > min);
+    if (next && !today.some(p => min >= p.from && min < p.to)) {
+      const d = next.from - min;
+      document.getElementById('left').textContent = 'через ' + (d >= 60 ? Math.floor(d / 60) + ' ч ' : '') + (d % 60) + ' мин';
+    }
+    if (!today.length || min >= today[today.length - 1].to) {       // на сегодня всё: показать ближайший учебный день
+      for (let i = 1; i <= 7; i++) {
+        const d = days[(wd + i) % 7] || [];
+        if (d.length) {
+          const h = document.createElement('div');
+          h.className = 'hint';
+          h.textContent = (today.length ? 'На сегодня всё. ' : 'Сегодня пар нет. ') + (i === 1 ? 'Завтра' : 'Дальше ' + NAMES[(wd + i) % 7]) +
+            ': ' + d.length + ' ' + word(d.length) + ' с ' + hm(d[0].from) + '.';
+          list.appendChild(h);
+          break;
+        }
+      }
+    }
+  }
+  async function load() {
+    try {
+      const txt = await read('schedule.json');
+      if (txt && txt !== last) { last = txt; data = JSON.parse(txt); }
+    } catch (e) {}
+    render();
+  }
+  document.addEventListener('config', e => { document.getElementById('box').classList.toggle('card-bg', e.detail.card !== false); });
+  load();
+  setInterval(load, 20000);
+</script>
+</body>
+</html>

@@ -16,6 +16,22 @@
   --line: rgba(255, 255, 255, 0.09);
 }
 
+/* Смена темы: цвета перетекают за 0,7 с, а не перескакивают. Переменные объявлены как цвета (@property),
+   поэтому браузер умеет их плавно менять. Включается после первой отрисовки (класс tween), чтобы при запуске
+   виджет сразу был в своих цветах. Кадры идут только во время смены. */
+@property --fg { syntax: '<color>'; inherits: true; initial-value: #f3e9e4; }
+@property --muted { syntax: '<color>'; inherits: true; initial-value: #b9aaa4; }
+@property --accent { syntax: '<color>'; inherits: true; initial-value: #ffb3b5; }
+@property --accent2 { syntax: '<color>'; inherits: true; initial-value: #e6c18d; }
+@property --accent3 { syntax: '<color>'; inherits: true; initial-value: #e6bdbd; }
+@property --glow { syntax: '<color>'; inherits: true; initial-value: #ffe9e9; }
+@property --pill { syntax: '<color>'; inherits: true; initial-value: #16110f; }
+@property --line { syntax: '<color>'; inherits: true; initial-value: rgba(255, 255, 255, 0.09); }
+@property --glass { syntax: '<color>'; inherits: true; initial-value: rgba(12, 8, 10, 0.36); }
+@property --edge { syntax: '<color>'; inherits: true; initial-value: rgba(255, 255, 255, 0.11); }
+html.tween { transition: --fg 0.7s ease, --muted 0.7s ease, --accent 0.7s ease, --accent2 0.7s ease, --accent3 0.7s ease, --glow 0.7s ease, --pill 0.7s ease, --line 0.7s ease, --glass 0.7s ease, --edge 0.7s ease; }
+html.noanim.tween { transition: none; }
+
 * { box-sizing: border-box; margin: 0; padding: 0; }
 
 html, body {
@@ -30,7 +46,29 @@ html, body {
   transition: color 0.6s;
 }
 
-.shadow { text-shadow: 0 1px 10px rgba(0, 0, 0, 0.28); }
+/* появление виджета (класс enter ставит и снимает common.js) и общая плавность нажатий */
+body { transition: color 0.6s, opacity 0.5s ease, transform 0.6s cubic-bezier(0.2, 0.8, 0.2, 1); }
+html.enter body { opacity: 0; transform: translateY(14px) scale(0.98); }
+.click, button { transition: background-color 0.18s, filter 0.18s, transform 0.12s, box-shadow 0.28s ease; }
+.click:active, button:active { transform: scale(0.96); }
+/* Свечение в цвете акцента, как у ползунка и переключателей в панелях. Тень повторяет скругление кнопки,
+   поэтому край у неё круглый, а не квадратный. Работает только при наведении: в покое ничего не рисуется. */
+:root { --halo: color-mix(in srgb, var(--accent) 42%, transparent); --halo-soft: color-mix(in srgb, var(--accent) 16%, transparent); }
+button.play:hover, .add:hover { box-shadow: 0 0 0 4px var(--halo-soft), 0 3px 16px var(--halo); }
+button.play:active, .add:active { box-shadow: 0 0 0 7px var(--halo-soft), 0 2px 10px var(--halo); }
+/* плитки, дни и строки списков: подсветка появляется плавно, а не рывком */
+.day, .cell, .item, .nav { transition: background-color 0.2s ease, box-shadow 0.25s ease, transform 0.12s; }
+.cell:hover, .day:not(.today):not(.sel):hover { box-shadow: inset 0 0 0 1px var(--halo-soft); }
+html.noanim body, html.noanim .click, html.noanim button, html.noanim .day, html.noanim .cell, html.noanim .item, html.noanim .nav { transition: none; }
+html.noanim.enter body { opacity: 1; transform: none; }
+
+/* круглая кнопка «+» в шапке виджета (задачи, календарь) */
+.add { align-self: center; width: 24px; height: 24px; border-radius: 12px; border: none; cursor: pointer; margin-left: 2px;
+       background: var(--accent); color: var(--pill); font: 700 17px/22px 'Segoe UI', sans-serif; }
+.add:hover { filter: brightness(1.12); }
+html.on-light .add, html.on-light .day.today { color: #fff; }
+
+.shadow { text-shadow: 0 1px 8px rgba(0, 0, 0, 0.22); }
 
 /* окантовка выделенного виджета и квадратик для изменения размера */
 .frame, .grip { position: fixed; pointer-events: none; opacity: 0; transition: opacity 0.15s; }
@@ -52,21 +90,40 @@ html, body {
   box-shadow: 0 0 0 1px var(--accent);
   font-family: 'Segoe Fluent Icons', 'Segoe MDL2 Assets'; font-size: 12px; line-height: 20px; text-align: center;
 }
+/* режим редактирования: у всех виджетов видна бледная рамка, у выделенного - яркая с квадратиком и шестерёнкой */
+html.editing .frame { opacity: 0.45; background: transparent; }
 html.selected .frame, html.selected .grip, html.selected .gear { opacity: 1; }
 
+/* Виджет без карточки (как в Ryoku): текст и линии лежат прямо на обоях. Чтобы они читались и на светлых
+   местах картинки, под ними двойная тень: плотная рядом и широкая мягкая вокруг. */
+.box:not(.card-bg), .wrap:not(.card-bg) {
+  filter: drop-shadow(0 1px 2px rgba(0, 0, 0, 0.60)) drop-shadow(0 0 14px rgba(0, 0, 0, 0.42));
+}
+/* на светлом месте обоев текст тёмный (см. contrast в common.js), а ореол под ним светлый */
+html.on-light .box:not(.card-bg), html.on-light .wrap:not(.card-bg) {
+  filter: drop-shadow(0 0 10px rgba(255, 255, 255, 0.55));
+}
+html.on-light .shadow { text-shadow: 0 0 12px rgba(255, 255, 255, 0.55); }
+
+/* Матовый шум поверх стекла (как акрил): убирает полосы на тёмных градиентах. Выключается в widgets.json: "all": {"noise": false}. */
+:root { --noise: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='2' stitchTiles='stitch'/%3E%3CfeColorMatrix values='0 0 0 0 1  0 0 0 0 1  0 0 0 0 1  0 0 0 0.05 0'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E"); }
+html.nonoise { --noise: none; }
+
 /* Стекло: общая подложка карточек. Слои снизу вверх: размытые обои (совмещены с экраном в common.js),
-   затемнение в цвет темы, блик по диагонали. Сверху светлая кромка и мягкая тень. */
+   лёгкое затемнение с оттенком темы, едва заметный свет сверху. Кромка тонкая, тень широкая и мягкая:
+   карточка должна выглядеть частью обоев, а не коробкой поверх них. */
 .card-bg {
   background-color: var(--pill);
   background-image:
-    linear-gradient(135deg, rgba(255, 255, 255, 0.20) 0%, rgba(255, 255, 255, 0.04) 42%, rgba(0, 0, 0, 0.10) 100%),
-    linear-gradient(var(--glass, rgba(12, 8, 10, 0.46)), var(--glass, rgba(12, 8, 10, 0.46))),
+    var(--noise, none),
+    linear-gradient(180deg, rgba(255, 255, 255, 0.08) 0%, rgba(255, 255, 255, 0) 45%),
+    linear-gradient(var(--glass, rgba(12, 8, 10, 0.36)), var(--glass, rgba(12, 8, 10, 0.36))),
     var(--wall-img, none);
-  background-repeat: no-repeat;
+  background-repeat: repeat, no-repeat, no-repeat, no-repeat;
   background-origin: border-box;
-  background-size: auto, auto, var(--wall-size, cover);
-  background-position: 0 0, 0 0, var(--wall-x, 0) var(--wall-y, 0);
-  border: 1px solid var(--edge, rgba(255, 255, 255, 0.24));
-  border-radius: 18px;
-  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.30), inset 0 1px 0 rgba(255, 255, 255, 0.28);
+  background-size: 160px 160px, auto, auto, var(--wall-size, cover);
+  background-position: 0 0, 0 0, 0 0, var(--wall-x, 0) var(--wall-y, 0);
+  border: 1px solid var(--edge, rgba(255, 255, 255, 0.11));
+  border-radius: var(--radius, 26px) !important;
+  box-shadow: 0 18px 46px rgba(0, 0, 0, 0.24), inset 0 1px 0 rgba(255, 255, 255, 0.10);
 }
