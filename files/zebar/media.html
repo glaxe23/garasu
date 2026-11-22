@@ -123,7 +123,12 @@
   }
 
   function render() {
-    sess = providers.outputMap.media?.currentSession || null;
+    // «текущий» источник Windows бывает не тот (вкладка с видео на паузе, Telegram): берём тот, где реально
+    // играет и есть название; если такого нет — текущий; если и его нет — любой с названием
+    const m = providers.outputMap.media;
+    const all = (m?.allSessions || []).filter(s => s && s.title);
+    const cur = m?.currentSession && m.currentSession.title ? m.currentSession : null;
+    sess = all.find(s => s.isPlaying) || cur || all[0] || null;
     $('card').classList.toggle('on', !!(sess && sess.title));
     reportTrack();
     // громкость приложения приходит от помощника (nowplaying.json); если её нет, показываем общую громкость Windows
@@ -137,9 +142,11 @@
     if (p !== lastPos || !sess.isPlaying) { lastPos = p; basePos = p; baseAt = performance.now(); }
   }
   providers.onOutput(render);
-  $('play').onclick = () => providers.outputMap.media?.togglePlayPause();
-  $('prev').onclick = () => providers.outputMap.media?.previous();
-  $('next').onclick = () => providers.outputMap.media?.next();
+  // кнопки управляют тем же источником, что показан (sessionId), а не «текущим» источником Windows
+  const target = () => (sess && sess.sessionId ? { sessionId: sess.sessionId } : undefined);
+  $('play').onclick = () => providers.outputMap.media?.togglePlayPause(target());
+  $('prev').onclick = () => providers.outputMap.media?.previous(target());
+  $('next').onclick = () => providers.outputMap.media?.next(target());
 
   // ---- громкость: ползунок и колёсико мыши над карточкой
   function setVolUi(v) {

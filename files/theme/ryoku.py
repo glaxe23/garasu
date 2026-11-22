@@ -57,6 +57,8 @@ def pick(arg):
     cur = load_state().get("theme", ids[0])
     if arg in (None, ""):
         arg = cur
+        if cur == "custom" and load_state().get("wallpaper"):     # свои обои (в том числе GIF) — те же
+            arg = load_state()["wallpaper"]
     if arg in ("next", "prev"):
         i = ids.index(cur) if cur in ids else -1
         arg = ids[(i + (1 if arg == "next" else -1)) % len(ids)]
@@ -121,6 +123,30 @@ if len(sys.argv) > 1 and sys.argv[1] == "list":
 tid, tname, wall = pick(sys.argv[1] if len(sys.argv) > 1 else None)
 if not os.path.exists(wall):
     sys.exit("Не найдены обои: " + wall)
+# Живые обои (GIF или видео): берём первый кадр — он идёт в обои Windows, цвета и стекло, а саму анимацию
+# поверх него крутит gifwall.pyw (под значками рабочего стола)
+VIDEO_EXT = (".mp4", ".m4v", ".webm", ".mkv", ".mov", ".avi", ".wmv")
+gif = None
+if wall.lower().endswith((".gif",) + VIDEO_EXT):
+    import zlib, glob
+    gif = wall
+    still = os.path.join(here, "gifwall_%08x.png" % (zlib.crc32(gif.encode("utf-8")) ^ int(os.path.getmtime(gif))))
+    if not os.path.exists(still):
+        for old in glob.glob(os.path.join(here, "gifwall_*.png")):    # прошлый кадр больше не нужен
+            try:
+                os.remove(old)
+            except OSError:
+                pass
+        if gif.lower().endswith(".gif"):
+            from PIL import Image as _Img
+            _im = _Img.open(gif); _im.seek(0); _im.convert("RGB").save(still)
+        else:                                         # видео: кадр достаёт gifwall.pyw через Qt (там FFmpeg)
+            import subprocess
+            subprocess.run([sys.executable, os.path.join(here, "gifwall.pyw"), "--still", gif, still],
+                           cwd=here, creationflags=0x08000000, timeout=40)
+            if not os.path.exists(still):
+                sys.exit("Не получилось открыть видео: " + gif)
+    wall = still
 c, _ = palette(wall)
 
 accent = c["primary"]
@@ -477,7 +503,18 @@ except Exception:
 
 if not os.environ.get("RYOKU_DRYRUN"):
     set_wallpaper(wall)
-json.dump({"theme": tid, "name": tname, "wallpaper": wall}, open(state_file, "w", encoding="utf-8"),
+    # GIF: включить или выключить плеер живых обоев (в игровом режиме он не нужен — бережём процессор)
+    try:
+        game = json.load(open(os.path.join(here, "settings.json"), encoding="utf-8")).get("mode") == "game"
+    except Exception:
+        game = False
+    gcfg = os.path.join(here, "gifwall.json")
+    json.dump({"path": gif or "", "off": bool(game)}, open(gcfg, "w", encoding="utf-8"), ensure_ascii=False)
+    if gif and not game:
+        import subprocess
+        subprocess.Popen([PYW.strip('"'), os.path.join(here, "gifwall.pyw")], cwd=here,
+                         creationflags=0x08000000 | 0x00000008)
+json.dump({"theme": tid, "name": tname, "wallpaper": gif or wall}, open(state_file, "w", encoding="utf-8"),
           ensure_ascii=False, indent=1)
 if sys.stdout:
     print("Тема:", tid, "-", tname, "| акцент", accent, "| таблетка", pill)

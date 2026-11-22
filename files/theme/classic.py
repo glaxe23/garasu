@@ -38,7 +38,7 @@ def _excepthook(t, v, tb):
 sys.excepthook = _excepthook
 
 try:
-    from PyQt6.QtCore import Qt, QTimer, QRectF, QPointF
+    from PyQt6.QtCore import Qt, QTimer, QRectF, QPointF, QRect, QPoint
     from PyQt6.QtGui import QPainter, QColor, QFont, QFontDatabase, QImage, QGuiApplication, QPen, QCursor, QBrush, QRadialGradient
     from PyQt6.QtWidgets import QApplication, QWidget
     if "--check" in sys.argv:
@@ -131,6 +131,33 @@ def ease(t):
     return 1 - (1 - t) ** 3
 
 
+def screen_for(rect):
+    """Монитор, на котором центр окна, а если центр ни на одном (монитор отключили) — ближайший."""
+    c = rect.center()
+    s = QGuiApplication.screenAt(QPoint(int(c.x()), int(c.y())))
+    if s is not None:
+        return s
+    best, dist = QGuiApplication.primaryScreen(), None
+    for sc in QGuiApplication.screens():
+        g = sc.geometry()
+        dx = max(g.left() - c.x(), 0, c.x() - g.right())
+        dy = max(g.top() - c.y(), 0, c.y() - g.bottom())
+        if dist is None or dx * dx + dy * dy < dist:
+            best, dist = sc, dx * dx + dy * dy
+    return best
+
+
+def fit_wall(img, w, h, cache):
+    """Обои под монитор другого размера: заполнение с обрезкой по центру, как у Windows. Кэш на смену обоев."""
+    if img.width() == w and img.height() == h:
+        return img
+    k = (img.cacheKey(), w, h)
+    if k not in cache:
+        s = img.scaled(w, h, Qt.AspectRatioMode.KeepAspectRatioByExpanding, Qt.TransformationMode.SmoothTransformation)
+        cache[k] = s.copy((s.width() - w) // 2, (s.height() - h) // 2, w, h)
+    return cache[k]
+
+
 WALL = {"key": None, "img": None}
 
 
@@ -143,9 +170,11 @@ def wall_lum(theme, rect):
     img = WALL["img"]
     if img is None:
         return 0
-    sw, sh = theme.get("screen", [1920, 1080])
+    scr = screen_for(rect).geometry()                         # на втором мониторе — свои координаты и размер
+    sw, sh = scr.width(), scr.height()
     kx, ky = img.width() / sw, img.height() / sh
-    part = img.copy(int(rect.x() * kx), int(rect.y() * ky), int(rect.width() * kx), int(rect.height() * ky))
+    rx, ry = rect.x() - scr.x(), rect.y() - scr.y()
+    part = img.copy(int(rx * kx), int(ry * ky), int(rect.width() * kx), int(rect.height() * ky))
     part = part.scaled(16, 16, Qt.AspectRatioMode.IgnoreAspectRatio, Qt.TransformationMode.SmoothTransformation)
     tot = 0
     for y in range(16):
@@ -206,7 +235,13 @@ class Widget(QWidget):
         k = self.cfg.get("scale", 100) / 100
         w, h = self.size_for(self.cfg)
         h = max(h, self.content_h())
-        self.setGeometry(int(self.cfg.get("x", 0)), int(self.cfg.get("y", 0)), int(w * k), int(h * k))
+        x, y, w, h = int(self.cfg.get("x", 0)), int(self.cfg.get("y", 0)), int(w * k), int(h * k)
+        r = QRect(x, y, w, h)
+        if QGuiApplication.screenAt(r.center()) is None:       # монитор отключили: показать на ближайшем
+            a = screen_for(r).availableGeometry()              # (в настройках место не меняется — вернётся,
+            x = max(a.left(), min(x, a.right() - w))           #  когда монитор снова подключат)
+            y = max(a.top(), min(y, a.bottom() - h))
+        self.setGeometry(x, y, w, h)
 
     @staticmethod
     def allcfg():
@@ -226,7 +261,7 @@ class Widget(QWidget):
     # ---- живые настройки: тема, место, масштаб, прозрачность (их меняет панель настроек)
     def reconfig(self, cfg, theme):
         if cfg != self.cfg:
-            moved = any(cfg.get(k) != self.cfg.get(k) for k in ("x", "y", "scale"))
+            moved = any(cfg.get(k) != self.cfg.get(k) for k in ("x", "y", "scale", "cols", "rows"))
             self.cfg = cfg
             if moved and not getattr(self, "edrag", None):
                 self.place()
@@ -384,8 +419,10 @@ class Widget(QWidget):
             h = -1                                          # для курсора-руки
         if self.editing() and h is None:
             W, H, lx, ly = self.width(), self.height(), e.position().x(), e.position().y()
+            edge = self.edge_at(lx, ly)
             cur = Qt.CursorShape.SizeFDiagCursor if self.selected() and lx >= W - self.GRIP and ly >= H - self.GRIP \
                 else Qt.CursorShape.PointingHandCursor if self.selected() and lx >= W - self.GEAR and ly <= self.GEAR \
+                else Qt.CursorShape.SizeHorCursor if edge == "w" else Qt.CursorShape.SizeVerCursor if edge == "h" \
                 else Qt.CursorShape.SizeAllCursor
         else:
             cur = Qt.CursorShape.PointingHandCursor if h is not None else Qt.CursorShape.ArrowCursor
@@ -495,7 +532,8 @@ class Widget(QWidget):
                 else:
                     Widget.GROUP.add(self)
                 self.update(); return
-            kind = "size" if self.selected() and lx >= W - self.GRIP and ly >= H - self.GRIP else "move"
+            kind = "size" if self.selected() and lx >= W - self.GRIP and ly >= H - self.GRIP \
+                else self.edge_at(lx, ly) or "move"
             if not self.selected():
                 Widget.GROUP.clear()
                 for o in Widget.WINS:
@@ -505,9 +543,29 @@ class Widget(QWidget):
             self.select()
             self.gpos0 = {o: o.pos() for o in self.group()}
             self.edrag = {"kind": kind, "g0": e.globalPosition(), "pos0": self.pos(), "moved": False,
-                         "scale0": self.cfg.get("scale", 100), "w0": W, "x": x, "y": y}
+                         "scale0": self.cfg.get("scale", 100), "w0": W, "x": x, "y": y,
+                         "edge0": {k: self.cfg.get(k) for k in self.EDGE_KEYS}}
             return
         self.click(x, y)
+
+    # ---- края рамки (только у виджетов с EDGES, сейчас у ярлыков): правый край тянет ширину,
+    # нижний — высоту, каждую отдельно. Уголок справа внизу по-прежнему меняет масштаб целиком.
+    EDGES, EDGE, EDGE_KEYS = False, 9, ()
+
+    def edge_at(self, lx, ly):
+        """'w' — правый край, 'h' — нижний край выделенного виджета, None — не край (пиксели окна)."""
+        if not (self.EDGES and self.selected()):
+            return None
+        W, H = self.width(), self.height()
+        if lx >= W - self.EDGE and ly > self.GEAR:
+            return "w"
+        if ly >= H - self.EDGE:
+            return "h"
+        return None
+
+    def edge_drag(self, kind, dx, dy):
+        """Сдвиг края на dx/dy базовых пикселей от начала: виджет сам решает, что поменять. Вернуть dict или None."""
+        return None
 
     # ---- привязка как в Figma: края и центры экрана и соседей, равные отступы; направляющие видны
     def others(self):
@@ -522,7 +580,7 @@ class Widget(QWidget):
     def snap_axis(self, pos, size, ax, cross):
         """Лучшее положение по оси ax и направляющие к нему. cross = (начало, конец) по другой оси."""
         sp = self.span
-        a0, a1 = sp(QGuiApplication.primaryScreen().availableGeometry(), ax)
+        a0, a1 = sp(self.drag_screen().availableGeometry(), ax)
         others = self.others()
         lines = [(a0, "start", None), (a1, "end", None), ((a0 + a1) / 2, "center", None)]
         for g in others:
@@ -558,6 +616,10 @@ class Widget(QWidget):
             return pos, []
         return best, guides
 
+    def drag_screen(self):
+        """Монитор, к краям которого липнет виджет: тот, где сейчас мышь (виджет можно унести на второй)."""
+        return QGuiApplication.screenAt(QCursor.pos()) or screen_for(self.geometry())
+
     def drag_to(self, g):
         d = self.edrag
         dx, dy = g.x() - d["g0"].x(), g.y() - d["g0"].y()
@@ -567,10 +629,17 @@ class Widget(QWidget):
         free = bool(QApplication.keyboardModifiers() & Qt.KeyboardModifier.ShiftModifier) \
             or self.allcfg().get("snap", True) is False
         guides = []
+        if d["kind"] in ("w", "h"):
+            k = max(0.2, d["scale0"] / 100)
+            ch = self.edge_drag(d["kind"], dx / k, dy / k)
+            if ch and any(self.cfg.get(a) != b for a, b in ch.items()):
+                self.cfg = dict(self.cfg, **ch)
+                self.place(); self._cache = None; self.update()
+            return
         if d["kind"] == "move":
-            scr = QGuiApplication.primaryScreen().geometry()
-            nx = max(-40, min(scr.width() - 60, round(d["pos0"].x() + dx)))
-            ny = max(0, min(scr.height() - 40, round(d["pos0"].y() + dy)))
+            vg = QGuiApplication.primaryScreen().virtualGeometry()       # все мониторы вместе
+            nx = max(vg.left() - 40, min(vg.right() - 60, round(d["pos0"].x() + dx)))
+            ny = max(vg.top(), min(vg.bottom() - 40, round(d["pos0"].y() + dy)))
             W, H = self.width(), self.height()
             if not free:
                 nx, gx = self.snap_axis(nx, W, 0, (ny, ny + H))
@@ -586,7 +655,7 @@ class Widget(QWidget):
                 sc = max(1, self.cfg.get("scale", 100))
                 best = self.TH + 0.5
                 for ax, kk, org in ((0, self.width() / sc, self.x()), (1, self.height() / sc, self.y())):
-                    for gg in self.others() + [QGuiApplication.primaryScreen().availableGeometry()]:
+                    for gg in self.others() + [screen_for(self.geometry()).availableGeometry()]:
                         for v in self.span(gg, ax):
                             c = (v - org) / kk
                             if abs((c - ns) * kk) < best:
@@ -614,6 +683,10 @@ class Widget(QWidget):
             for o in g0:
                 save_cfg(o.name, x=o.x(), y=o.y())
                 o.cfg = dict(o.cfg, x=o.x(), y=o.y())
+                o._cache = None; o.contrast(); o.update()     # под виджетом другие обои (или другой монитор)
+        elif d["kind"] in ("w", "h"):
+            Widget.UNDO.append((self, d["edge0"]))
+            save_cfg(self.name, **{k: self.cfg.get(k) for k in self.EDGE_KEYS})
         else:
             Widget.UNDO.append((self, {"scale": d["scale0"]}))
             save_cfg(self.name, scale=self.cfg["scale"])
@@ -681,6 +754,9 @@ class Widget(QWidget):
         if sel:
             p.setPen(QPen(pill, 2)); p.setBrush(acc)
             p.drawRoundedRect(QRectF(W - 17, H - 17, 15, 15), 4, 4)
+            if self.EDGES:                         # ручки-полоски посередине правого и нижнего края
+                p.drawRoundedRect(QRectF(W - 7, H / 2 - 14, 6, 28), 3, 3)
+                p.drawRoundedRect(QRectF(W / 2 - 14, H - 7, 28, 6), 3, 3)
             p.drawRoundedRect(QRectF(W - self.GEAR + 1, 1, self.GEAR - 2, self.GEAR - 2), 7, 7)
             p.setFont(font(12, 400, "Segoe Fluent Icons")); p.setPen(pill)
             p.drawText(QRectF(W - self.GEAR + 1, 1, self.GEAR - 2, self.GEAR - 2),
@@ -777,16 +853,20 @@ class Widget(QWidget):
             Widget.WALL = {"key": key, "old": old, "t": time.time(), "img": img.scaled(sw, sh, Qt.AspectRatioMode.KeepAspectRatioByExpanding,
                                                           Qt.TransformationMode.SmoothTransformation)}
         z = self.zoom(); g = self.geometry()
+        scr = screen_for(g).geometry()                 # второй монитор: обои подогнаны под его размер
+        gx, gy = g.x() - scr.x(), g.y() - scr.y()
+        sized = Widget.WALL.setdefault("sized", {})
         self._wall_old = None
         old = Widget.WALL.get("old")
         dt = time.time() - Widget.WALL.get("t", 0)
         if old is not None and dt >= 0.7:
             Widget.WALL["old"] = None
         elif old is not None and self.anim_on():
-            self._wall_old = (old.copy(int(g.x() + r.x() * z), int(g.y() + r.y() * z), int(r.width() * z),
+            old = fit_wall(old, scr.width(), scr.height(), sized)
+            self._wall_old = (old.copy(int(gx + r.x() * z), int(gy + r.y() * z), int(r.width() * z),
                                        int(r.height() * z)), dt / 0.7)
-        return Widget.WALL["img"].copy(int(g.x() + r.x() * z), int(g.y() + r.y() * z),
-                                       int(r.width() * z), int(r.height() * z))
+        return fit_wall(Widget.WALL["img"], scr.width(), scr.height(), sized).copy(
+            int(gx + r.x() * z), int(gy + r.y() * z), int(r.width() * z), int(r.height() * z))
 
     def paintEvent(self, e):
         if self._cache is None:
@@ -1037,7 +1117,7 @@ class Guides(QWidget):
                          Qt.WindowType.WindowStaysOnTopHint | Qt.WindowType.WindowTransparentForInput)
         self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
         self.setAttribute(Qt.WidgetAttribute.WA_ShowWithoutActivating)
-        self.setGeometry(QGuiApplication.primaryScreen().geometry())
+        self.setGeometry(QGuiApplication.primaryScreen().virtualGeometry())     # на все мониторы
         self.w, self.guides = None, []
 
     @staticmethod
@@ -1048,6 +1128,9 @@ class Guides(QWidget):
             Guides.ONE = Guides()
         g = Guides.ONE
         g.w, g.guides = w, guides
+        vg = QGuiApplication.primaryScreen().virtualGeometry()
+        if guides and g.geometry() != vg:                       # мониторы подключили или убрали
+            g.setGeometry(vg)
         if os.environ.get("CLASSIC_NOSHOW"):                  # для записи ролика: окно не показывать
             return
         g.setVisible(bool(guides)); g.update()
@@ -1151,6 +1234,21 @@ def main():
         for w in wins:
             w.tick()
     timer = QTimer(); timer.timeout.connect(live); timer.start(1000)
+
+    def screens_changed(*a):
+        """Монитор подключили, отключили или сменили разрешение: виджеты встают на свои места
+        (а виджеты с отключённого монитора временно переезжают на оставшийся)."""
+        def again():
+            for w in wins:
+                if not getattr(w, "edrag", None):
+                    w.place(); w._cache = None; w.contrast(); w.update()
+        QTimer.singleShot(800, again)
+    app.screenAdded.connect(screens_changed)
+    app.screenRemoved.connect(screens_changed)
+    app.primaryScreenChanged.connect(screens_changed)
+    for s in app.screens():
+        s.geometryChanged.connect(screens_changed)
+    app.screenAdded.connect(lambda s: s.geometryChanged.connect(screens_changed))
     if "--quit" in sys.argv:
         QTimer.singleShot(int(sys.argv[sys.argv.index("--quit") + 1]) * 1000, app.quit)
     return app.exec()

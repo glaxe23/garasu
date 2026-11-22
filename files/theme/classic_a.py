@@ -9,23 +9,42 @@ class Links(C.Widget):
     CARD = "box"
     name = "links"
     base = (316, 122)
-    COLS, CELL_H = 4, 78
+    CELL_W, CELL_H = 73, 78
+    # ширину и высоту можно тянуть отдельно (края рамки в режиме правки): cols — значков в ряд,
+    # rows — сколько рядов минимум (лишние ряды — пустое место под новые ярлыки)
+    EDGES, EDGE_KEYS = True, ("cols", "rows")
 
     def items(self):
         return [i for i in self.cfg.get("items", []) if i.get("path")]
 
+    def cols(self, cfg=None):
+        return max(1, min(12, int((cfg or self.cfg).get("cols") or 4)))
+
+    def size_for(self, cfg):
+        n = len([i for i in cfg.get("items", []) if i.get("path")])
+        cols = self.cols(cfg)
+        return (24 + self.CELL_W * cols, 47 + self.CELL_H * max(1, int(cfg.get("rows") or 0), -(-n // cols)))
+
     def content_h(self):
-        n = len(self.items())
-        return 2 + 12 + 15 + 6 + max(1, -(-n // self.COLS)) * self.CELL_H + 10 + 2
+        return self.size_for(self.cfg)[1]
 
     def state(self):
         return repr(self.items())
 
+    def edge_drag(self, kind, dx, dy):
+        n, cols = len(self.items()), self.cols(self.edrag["edge0"])
+        if kind == "w":
+            w0 = 24 + self.CELL_W * cols
+            return {"cols": max(1, min(12, round((w0 + dx - 24) / self.CELL_W)))}
+        rows0 = max(1, int(self.edrag["edge0"].get("rows") or 0), -(-n // cols))
+        rows = max(1, min(12, round((self.CELL_H * rows0 + dy) / self.CELL_H)))
+        return {"rows": rows if rows > -(-n // cols) else 0}      # меньше, чем нужно значкам, не бывает
+
     def geo(self):
         x0, top = 2 + 10, 2 + 12 + 15 + 6
-        cw = (312 - 20) / self.COLS
+        cols = self.cols()
         for i, it in enumerate(self.items()):
-            yield it, QRectF(x0 + (i % self.COLS) * cw, top + (i // self.COLS) * self.CELL_H, cw, self.CELL_H)
+            yield it, QRectF(x0 + (i % cols) * self.CELL_W, top + (i // cols) * self.CELL_H, self.CELL_W, self.CELL_H)
 
     def draw(self, p):
         C.tag(p, self, 2 + 10 + 6, 2 + 12, "ЯРЛЫКИ")

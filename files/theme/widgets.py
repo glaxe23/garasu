@@ -129,7 +129,8 @@ WIDGETS = {
     "links": {
         "name": "Ярлыки", "size": (316, 122),
         # items: программы и папки [{title, path, icon}]. Высота окна зависит от их числа (см. size ниже)
-        "defaults": {"on": True, "x": 229, "y": 40, "scale": 100, "opacity": 100, "card": False, "items": []},
+        "defaults": {"on": True, "x": 229, "y": 40, "scale": 100, "opacity": 100, "card": False, "items": [],
+                     "cols": 4, "rows": 0},
         "options": [("items", "Ярлыки", "links"), ("card", "Стекло", "bool")],
     },
 }
@@ -230,8 +231,10 @@ def size(k, cfg):
         n = len([i for i in cfg[k].get("items", []) if i.get("title") and i.get("date")])
         return (300, 56 + 62 * max(1, n))
     if k == "links":
+        # cols — значков в ряд, rows — сколько рядов минимум (их меняют края рамки в режиме правки)
         n = len([i for i in cfg[k].get("items", []) if i.get("path")])
-        return (316, 44 + 78 * max(1, -(-n // 4)))
+        cols = max(1, int(cfg[k].get("cols") or 4))
+        return (24 + 73 * cols, 44 + 78 * max(1, int(cfg[k].get("rows") or 0), -(-n // cols)))
     return w.get("sizes", {}).get(cfg[k].get("style"), w["size"])
 
 
@@ -278,15 +281,42 @@ def fit_screen(cfg):
     """Сдвинуть виджеты, которые не помещаются на экран (нужно на экранах меньше 1920x1080)."""
     import ctypes
     sw, sh = ctypes.windll.user32.GetSystemMetrics(0), ctypes.windll.user32.GetSystemMetrics(1)
+    mons = monitors()
     for k in ORDER:
         c = cfg[k]
         w, h = size(k, cfg)
-        if w * c["scale"] / 100 > sw - 40:                       # слишком широкий: уменьшаем
-            c["scale"] = max(40, int((sw - 40) * 100 / w))
+        # виджет на втором мониторе остаётся там: поправляем его только в пределах этого монитора
+        x0, y0, mw, mh = 0, 0, sw, sh
+        cx, cy = c["x"] + w * c["scale"] / 200, c["y"] + h * c["scale"] / 200
+        for l, t, r, b in mons:
+            if (l, t) != (0, 0) and l <= cx < r and t <= cy < b:
+                x0, y0, mw, mh = l, t, r - l, b - t
+                break
+        if w * c["scale"] / 100 > mw - 40:                       # слишком широкий: уменьшаем
+            c["scale"] = max(40, int((mw - 40) * 100 / w))
         s = c["scale"] / 100
-        c["x"] = max(0, min(c["x"], int(sw - w * s - 16)))
-        c["y"] = max(0, min(c["y"], int(sh - h * s - 70)))
+        c["x"] = max(x0, min(c["x"], int(x0 + mw - w * s - 16)))
+        c["y"] = max(y0, min(c["y"], int(y0 + mh - h * s - 70)))
     return cfg
+
+
+def monitors():
+    """Прямоугольники всех мониторов (left, top, right, bottom); у основного левый верх — (0, 0)."""
+    import ctypes
+    from ctypes import wintypes
+    out = []
+    proc = ctypes.WINFUNCTYPE(ctypes.c_int, wintypes.HMONITOR, wintypes.HDC, ctypes.POINTER(wintypes.RECT),
+                              wintypes.LPARAM)
+
+    def cb(hm, hdc, rc, lp):
+        r = rc.contents
+        out.append((r.left, r.top, r.right, r.bottom))
+        return 1
+    try:
+        ctypes.windll.user32.EnumDisplayMonitors(None, None, proc(cb), 0)
+    except Exception:
+        pass
+    return out
 
 
 # ---- Garasu Classic: виджеты на Qt вместо Zebar. Включено, пока рядом лежит файл classic.on

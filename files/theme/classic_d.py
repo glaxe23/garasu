@@ -9,8 +9,12 @@ from classic_b import tools, run
 
 try:
     from winrt.windows.media.control import GlobalSystemMediaTransportControlsSessionManager as Manager
-except Exception:
+except Exception as _e:                      # без winrt плеер не видит музыку: пишем причину в classic.log
     Manager = None
+    try:
+        C.log("плеер: не загрузилась библиотека winrt (%s) — трек не будет виден" % _e)
+    except Exception:
+        pass
 
 
 class Ws:
@@ -84,6 +88,7 @@ class Smtc:
 
     def __init__(self):
         self.now = None                   # dict или None
+        self.chosen = None                # источник Windows, который сейчас показан
         self.loop = asyncio.new_event_loop()
         threading.Thread(target=self.loop.run_forever, daemon=True).start()
         threading.Thread(target=self.poll, daemon=True).start()
@@ -96,11 +101,38 @@ class Smtc:
                 pass
             time.sleep(1)
 
+    async def pick(self):
+        """Какой источник показывать. «Текущий» источник Windows бывает не тот: например, вкладка с видео
+        на паузе или Telegram, а музыка играет в другом браузере. Берём тот, где сейчас реально играет
+        и есть название трека; если такого нет — текущий; если и его нет — любой с названием."""
+        mgr = await Manager.request_async()
+        cur = mgr.get_current_session()
+        try:
+            all_ = list(mgr.get_sessions())
+        except Exception:
+            all_ = []
+        info = []
+        for s in all_:
+            try:
+                pr = await s.try_get_media_properties_async()
+                info.append((s, pr, s.get_playback_info().playback_status == 4))
+            except Exception:
+                pass
+        for s, pr, playing in info:
+            if playing and pr.title:
+                return s, pr
+        if cur:
+            return cur, await cur.try_get_media_properties_async()
+        for s, pr, _ in info:
+            if pr.title:
+                return s, pr
+        return None, None
+
     async def read(self):
-        s = (await Manager.request_async()).get_current_session()
+        s, pr = await self.pick()
+        self.chosen = s
         if not s:
             return None
-        pr = await s.try_get_media_properties_async()
         tl = s.get_timeline_properties()
         playing = s.get_playback_info().playback_status == 4
         sec = lambda td: td.total_seconds() if isinstance(td, datetime.timedelta) else (td or 0) / 1e7
@@ -117,7 +149,7 @@ class Smtc:
 
     def call(self, what):
         async def go():
-            s = (await Manager.request_async()).get_current_session()
+            s, _ = await self.pick()                 # кнопки управляют тем же источником, что показан
             if s:
                 await getattr(s, what)()
         if Manager:

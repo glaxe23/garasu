@@ -71,8 +71,9 @@ def pull_moves():
     чтобы панель не затёрла свежий перенос старыми значениями."""
     disk = W.load()
     for k in W.ORDER:
-        for g in ("x", "y", "scale"):
-            cfg[k][g] = disk[k][g]
+        for g in ("x", "y", "scale", "cols", "rows"):      # cols, rows — ширина и высота ярлыков (края рамки)
+            if g in disk[k]:
+                cfg[k][g] = disk[k][g]
 
 
 def changed(geo=False):

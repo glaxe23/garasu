@@ -57,6 +57,11 @@ def thumb(t):
     p = os.path.join(thumbs, t["id"] + "_c.png")             # крупнее прежних: карточка в карусели больше
     src = wall_path(t)
     if not os.path.exists(p) or os.path.getmtime(p) < os.path.getmtime(src):
+        if src.lower().endswith((".mp4", ".m4v", ".webm", ".mkv", ".mov", ".avi", ".wmv")):
+            frame = os.path.join(thumbs, t["id"] + "_frame.png")      # видеотема: первый кадр достаёт gifwall
+            subprocess.run([sys.executable, os.path.join(here, "gifwall.pyw"), "--still", src, frame],
+                           creationflags=0x08000000, timeout=40)
+            src = frame
         im = ImageOps.fit(Image.open(src).convert("RGB"), (CW * 2, CHH * 2), Image.LANCZOS)
         im.save(p)
     return Image.open(p).convert("RGB")
@@ -260,15 +265,21 @@ def own_pick(e):
     from tkinter import filedialog
     busy[0] = True
     win.attributes("-topmost", False)
-    p = filedialog.askopenfilename(parent=win, title="Картинка для обоев",
-                                   filetypes=[("Картинки", "*.jpg *.jpeg *.png *.bmp *.webp"), ("Все файлы", "*.*")])
+    vids = "*.mp4 *.m4v *.webm *.mkv *.mov *.avi *.wmv"
+    p = filedialog.askopenfilename(parent=win, title="Картинка, GIF или видео для обоев",
+                                   filetypes=[("Картинки, GIF и видео",
+                                               "*.jpg *.jpeg *.png *.bmp *.webp *.gif " + vids),
+                                              ("Живые обои (GIF и видео)", "*.gif " + vids),
+                                              ("Все файлы", "*.*")])
     win.attributes("-topmost", True)
     busy[0] = False
     if p:
         hint.configure(text="применяю…")
         win.update_idletasks()
-        subprocess.run([PYW_, os.path.join(here, "ryoku.py"), os.path.normpath(p)], creationflags=0x08000000)
+        r = subprocess.run([PYW_, os.path.join(here, "ryoku.py"), os.path.normpath(p)], creationflags=0x08000000)
         paint()
+        if r.returncode:
+            hint.configure(text="не получилось открыть этот файл")
     win.after(150, grab_focus)
 
 
