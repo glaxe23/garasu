@@ -16,7 +16,7 @@ if (-not ((Test-Path -LiteralPath "$dst\venv") -and (Test-Path -LiteralPath "$ds
     exit 2
 }
 $ask = Msg ("Выключить оформление Garasu?`r`n`r`nВернутся панель задач, меню «Пуск» по клавише Win, прежние настройки и обои.`r`n" +
-    "Папка с файлами оформления будет удалена.`r`n" +
+    "Файлы останутся на диске. После проверки папку Garasu можно удалить вручную.`r`n" +
     "Стиль Проводника выключится. Сами программы (GlazeWM, YASB, Zebar, AutoHotkey, Python, Windhawk) останутся: их можно убрать через Параметры - Приложения.") 'YesNo'
 if ("$ask" -ne 'Yes') { exit }
 
@@ -72,16 +72,17 @@ Remove-Item "$desktop\Garasu - темы.lnk", "$desktop\Удалить Garasu.ln
 # настройки, которых до установки не было, убираем совсем; те, что были, ниже вернутся из backup
 $cfgs = "$env:USERPROFILE\.config\yasb\config.yaml", "$env:USERPROFILE\.config\yasb\styles.css",
         "$env:USERPROFILE\.glzr\glazewm\config.yaml", "$env:USERPROFILE\.glzr\zebar\settings.json"
-Remove-Item -LiteralPath $cfgs -Force
-Remove-Item -LiteralPath "$env:USERPROFILE\.glzr\zebar\ryoku" -Recurse -Force
+
+# Сохраняем папку виджетов: в ней лежат черновик и личные файлы.
 $bak = Get-ChildItem "$dst\backup" -Directory -Filter 'before-install-*' | Sort-Object Name | Select-Object -First 1
 if ($bak) {
-    foreach ($f in "$env:USERPROFILE\.config\yasb\config.yaml", "$env:USERPROFILE\.config\yasb\styles.css",
-                   "$env:USERPROFILE\.glzr\glazewm\config.yaml", "$env:USERPROFILE\.glzr\zebar\settings.json") {
+    foreach ($f in $cfgs) {
+        $restored = $false
         foreach ($n in ($f -replace '[:\\]', '_'), ($f.Substring($env:USERPROFILE.Length) -replace '[:\\]', '_')) {
             $saved = Join-Path $bak.FullName $n
-            if (Test-Path -LiteralPath $saved) { Copy-Item -LiteralPath $saved $f -Force; break }
+            if (Test-Path -LiteralPath $saved) { Copy-Item -LiteralPath $saved $f -Force -ErrorAction Stop; $restored = $true; break }
         }
+        if (!$restored) { Remove-Item -LiteralPath $f -Force }
     }
     $w = Get-Content "$($bak.FullName)\wallpaper.txt" -Encoding UTF8 | Select-Object -First 1
     if ($w -and (Test-Path -LiteralPath $w) -and -not $TestRoot) {
@@ -89,9 +90,5 @@ if ($bak) {
         [RyokuWall]::SystemParametersInfo(20, 0, $w, 3) | Out-Null
     }
 }
-Msg "Готово. Оформление выключено и удалено." | Out-Null
-# папку установки удаляет отдельная команда уже после выхода этого скрипта (он сам лежит в этой папке)
-if ((Test-Path -LiteralPath "$dst\theme\ryoku.py") -and (Test-Path -LiteralPath "$dst\venv")) {
-    Start-Process cmd.exe -ArgumentList "/c cd /d `"$env:TEMP`" & timeout /t 2 /nobreak >nul & rmdir `"$dst\venv\Scripts`" 2>nul & rmdir /s /q `"$dst`"" -WindowStyle Hidden
-}
+Msg "Оформление выключено. Папка Garasu и черновик сохранены." | Out-Null
 exit 0

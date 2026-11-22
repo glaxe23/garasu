@@ -39,6 +39,8 @@ def install(files, dst_root, zdir):
     n = 0
     for sub, to in (("theme", os.path.join(dst_root, "theme")), ("zebar", zdir)):
         for name in os.listdir(os.path.join(files, sub)):
+            if sub == "zebar" and name.lower() == "scratch.txt":
+                continue
             s, d = os.path.join(files, sub, name), os.path.join(to, name)
             if os.path.isdir(s):                               # папки (если появятся в новых версиях) — целиком
                 shutil.copytree(s, d, dirs_exist_ok=True)

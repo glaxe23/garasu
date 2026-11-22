@@ -1,4 +1,4 @@
-﻿# Установщик Garasu с окном. Запускается из «Install.bat» или из Garasu-Setup.exe.
+﻿# Установщик Garasu с окном. Запускается из «Install.bat» или из Garasu.exe.
 #   -Check            только проверить компьютер и показать, что будет сделано, ничего не меняя
 #   -Auto             без окна: сразу установить и выйти (код выхода = число проблем)
 #   -TestRoot <папка> проверочная установка в отдельную папку: ничего не запускает и не трогает настоящий рабочий стол
@@ -98,7 +98,11 @@ $form.Controls.AddRange(@($title, $sub, $pathLbl, $pathBox, $browse, $glassBox, 
 $close.Add_Click({ $form.Close() })
 $logBtn.Add_Click({ Start-Process notepad.exe "`"$log`"" })
 
-function Pump { [System.Windows.Forms.Application]::DoEvents() }
+. (Join-Path $src 'wizard.ps1')
+function Pump {
+    $fill.Width = [int]($track.Width * $bar.Value / 100)
+    [System.Windows.Forms.Application]::DoEvents()
+}
 function Note([string]$text) { try { Add-Content -LiteralPath $log -Value $text -Encoding utf8 } catch {} }
 function Say([string]$text, $color = $fg) {
     $box.SelectionStart = $box.TextLength; $box.SelectionColor = $color
@@ -256,7 +260,27 @@ function Install {
         if ($want -notmatch '^[A-Za-z]:(\\[A-Za-z0-9_.\-]+)+$') {
             Bad 'Папка установки: нужен путь вида D:\Programs\garasu, только английские буквы и цифры, без пробелов.'; return
         }
-        $script:dst = $want
+        if (($want.Split('\') | Where-Object { $_ -match '[.]$' -or $_ -match '^(CON|PRN|AUX|NUL|COM[1-9]|LPT[1-9])([.]|$)' })) {
+            Bad 'Выбери обычную папку без точек в конце имени и зарезервированных имён Windows.'; return
+        }
+        $script:dst = [IO.Path]::GetFullPath($want)
+    }
+    $parent = [IO.DirectoryInfo]::new($dst)
+    while ($parent) {
+        if ($parent.Exists -and ($parent.Attributes -band [IO.FileAttributes]::ReparsePoint)) {
+            Bad 'Выбери папку без ссылок и перенаправлений.'; return
+        }
+        $parent = $parent.Parent
+    }
+    if (Test-Path -LiteralPath $dst) {
+        $partial = (Test-Path -LiteralPath "$dst\.garasu-install-root" -PathType Leaf) -and
+            ((Get-Content -LiteralPath "$dst\.garasu-install-root" -Raw -ErrorAction Stop).Trim() -eq $dst)
+        $previous = (Test-Path -LiteralPath "$dst\theme\ryoku.py" -PathType Leaf) -and
+            (Test-Path -LiteralPath "$dst\uninstall.ps1" -PathType Leaf) -and (Test-Path -LiteralPath "$dst\start.bat" -PathType Leaf)
+        if (!(Test-Path -LiteralPath $dst -PathType Container) -or
+            (!$partial -and !$previous -and @(Get-ChildItem -LiteralPath $dst -Force -ErrorAction Stop).Count)) {
+            Bad 'Выбери пустую папку или папку существующей установки Garasu.'; return
+        }
     }
     $go.Enabled = $false; $close.Enabled = $false; $pathBox.Enabled = $false; $browse.Enabled = $false
     $winget = (Get-Command winget -ErrorAction SilentlyContinue).Source
@@ -325,7 +349,8 @@ function Install {
     # ---------------------------------------------------------- 3. свой Python в папке установки
     # Отдельное окружение C:\garasu\venv: путь без кириллицы и пробелов, библиотеки не смешиваются с чужими.
     Step 'Шаг 3 из 6. Библиотеки Python' 46
-    New-Item -ItemType Directory -Force $dst | Out-Null
+    New-Item -ItemType Directory -Force $dst -ErrorAction Stop | Out-Null
+    Set-Content -LiteralPath "$dst\.garasu-install-root" -Value $dst -ErrorAction Stop
     # повторная установка поверх работающей: старые помощники и виджеты держат venv и старый код.
     # Без остановки venv не пересоздаётся (pythonw.exe занят), а после запуска были бы копии старых и новых процессов.
     $ours = @(Get-CimInstance Win32_Process -ErrorAction SilentlyContinue | Where-Object {
@@ -397,16 +422,18 @@ function Install {
 
     # ---------------------------------------------------------- 4. файлы
     Step 'Шаг 4 из 6. Файлы оформления' 62
-    $stamp = Get-Date -Format 'yyyyMMdd-HHmmss'
-    $bak = "$dst\backup\before-install-$stamp"
+    $stamp = (Get-Date -Format 'yyyyMMdd-HHmmss-fff') + '-' + [guid]::NewGuid().ToString('N')
+    $backupName = "before-install-$stamp"
+    $bak = "$dst\backup\pending-$stamp"
     $yasb = "$userHome\.config\yasb"; $glaze = "$userHome\.glzr\glazewm"; $zebar = "$userHome\.glzr\zebar"
-    New-Item -ItemType Directory -Force "$dst\theme", "$dst\wallpapers", "$dst\photos", $bak, $yasb, $glaze, "$zebar\ryoku" | Out-Null
+    New-Item -ItemType Directory -Force "$dst\theme", "$dst\wallpapers", "$dst\photos", $bak, $yasb, $glaze, "$zebar\ryoku" -ErrorAction Stop | Out-Null
     foreach ($f in "$yasb\config.yaml", "$yasb\styles.css", "$glaze\config.yaml", "$zebar\settings.json") {
-        if (Test-Path -LiteralPath $f) { Copy-Item -LiteralPath $f (Join-Path $bak (($f.Substring($userHome.Length)) -replace '[:\\]', '_')) -Force }
+        if (Test-Path -LiteralPath $f) { Copy-Item -LiteralPath $f (Join-Path $bak (($f.Substring($userHome.Length)) -replace '[:\\]', '_')) -Force -ErrorAction Stop }
     }
     try { (Get-ItemProperty 'HKCU:\Control Panel\Desktop').WallPaper | Set-Content "$bak\wallpaper.txt" -Encoding utf8 } catch {}
-    Copy-Item "$src\theme\*" "$dst\theme" -Recurse -Force
-    Copy-Item "$src\zebar\*" "$zebar\ryoku" -Recurse -Force
+    Rename-Item -LiteralPath $bak -NewName $backupName -ErrorAction Stop
+    Copy-Item "$src\theme\*" "$dst\theme" -Recurse -Force -ErrorAction Stop
+    Copy-Item "$src\zebar\*" "$zebar\ryoku" -Exclude scratch.txt -Recurse -Force -ErrorAction Stop
     # в настройках GlazeWM и в подсказке виджета «Фото» путь к папке установки подставляется настоящий
     $dstF = $dst.Replace('\', '/')
     $utf8 = New-Object Text.UTF8Encoding($false)
@@ -414,7 +441,7 @@ function Install {
     [IO.File]::WriteAllText("$glaze\config.yaml", $g.Replace('pythonw C:/garasu/', "$dstF/venv/Scripts/pythonw.exe $dstF/"), $utf8)
     $ph = "$zebar\ryoku\photo.html"
     if (Test-Path -LiteralPath $ph) { [IO.File]::WriteAllText($ph, [IO.File]::ReadAllText($ph, $utf8).Replace('C:\garasu\photos', "$dst\photos"), $utf8) }
-    Copy-Item "$src\uninstall.ps1", "$src\Uninstall.bat", "$src\start.bat" $dst -Force
+    Copy-Item "$src\uninstall.ps1", "$src\Uninstall.bat", "$src\start.bat" $dst -Force -ErrorAction Stop
 
     if (-not (Test-Path -LiteralPath "$dst\theme\settings.json")) {
         '{"dock": "auto", "side_gap": 24, "mode": "daily", "auto_game": true, "games": [], "auto_theme": {"on": false, "day": "sky", "night": "night", "day_from": 8, "night_from": 20}}' |
@@ -524,7 +551,7 @@ function Install {
 }
 
 function Finish {
-    try { Copy-Item -LiteralPath $log "$dst\install.log" -Force -ErrorAction SilentlyContinue } catch {}
+    if (!$Check -and $script:done) { Copy-Item -LiteralPath $log "$dst\install.log" -Force -ErrorAction SilentlyContinue }
     $close.Enabled = $true
     if ($Check) { $go.Enabled = $true; return }
     Say ''
@@ -546,9 +573,22 @@ function Finish {
 }
 
 $go.Add_Click({
+    if ($script:stage -eq 'result') {
+        $go.Text = if ($Check) { 'Проверить' } else { 'Установить' }
+        $pathBox.Enabled = $true; $browse.Enabled = $true
+        ShowStage config
+        return
+    }
     $script:problems = @(); $script:done = $false
+    $box.Clear(); $bar.Value = 0
+    ShowStage running
     try { Install } catch { Bad "Ошибка установщика: $_"; Note $_.ScriptStackTrace }
     Finish
+    ShowStage result
+    $title.Text = if ($script:problems.Count) { 'Нужна проверка' } elseif ($Check) { 'Проверка завершена' } else { 'Garasu установлен' }
+    $go.Visible = $Check -or $script:problems.Count -gt 0
+    $go.Enabled = $true; $go.Text = 'К параметрам'
+    $logBtn.Visible = $true
 })
 if ($Check) { $go.Text = 'Проверить' }
 if ($Auto) {

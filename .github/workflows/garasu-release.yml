@@ -50,7 +50,7 @@ jobs:
         with:
           name: garasu-installer
           path: |
-            dist/Garasu-Setup.exe
+            dist/Garasu.exe
             dist/Garasu.zip
           if-no-files-found: error
 
@@ -75,6 +75,8 @@ jobs:
           GARASU_TAG: ${{ needs.build.outputs.release_tag }}
         shell: bash
         run: |
-          gh release create "$GARASU_TAG" dist/Garasu-Setup.exe dist/Garasu.zip \
+          cd dist
+          sha256sum Garasu.exe Garasu.zip > SHA256SUMS.txt
+          gh release create "$GARASU_TAG" Garasu.exe Garasu.zip SHA256SUMS.txt \
             --repo "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" \
             --title "Garasu ${GARASU_TAG#Garasu_v}" --generate-notes

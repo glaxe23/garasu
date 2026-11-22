@@ -17,7 +17,7 @@ PRIVATE_NAMES = {
     ".env", "settings.json", "state.json", "panel_pos.json", "theme.json",
     "widgets.json", "nowplaying.json", "tasks.json", "photos.json",
     "calendar_notes.json", "schedule.json", "pomodoro_state.json", "zpack.json",
-    "claude_status.txt", "bar_focus.txt", "classic.on", "classic.off", "classic.tried",
+    "scratch.txt", "claude_status.txt", "bar_focus.txt", "classic.on", "classic.off", "classic.tried",
 }
 PRIVATE_DIRS = {"backup", "profiles", "__pycache__", "thumbs", "pylib"}
 PRIVATE_PATTERN = re.compile(
@@ -156,21 +156,21 @@ def build(root, output):
     package["Garasu/README.txt"] = readme
     with TemporaryDirectory(prefix="garasu-build-") as temp:
         work = Path(temp)
-        exe = work / "Garasu-Setup.exe"
+        exe = work / "Garasu.exe"
         archive = work / "Garasu.zip"
         write_zip(work / "payload.zip", files)
         (work / "setup.cmd").write_bytes(windows_batch(SETUP))
         sed = work / "setup.sed"
         sed.write_text(SED.format(target=exe, work=work), encoding="ascii")
         subprocess.run(["iexpress.exe", "/N", "/Q", str(sed)], check=True)
-        print(set_icon(str(exe), str(work / "garasu.ico")))
+        print(set_icon(str(exe), str(root / "files" / "garasu.ico")))
         verify_installer(exe, work, files)
         write_zip(archive, package)
         verify_zip(archive, package)
         output.mkdir(parents=True, exist_ok=True)
         for artifact in (exe, archive):
             shutil.copyfile(artifact, output / artifact.name)
-    print(f"Verified Garasu-Setup.exe and Garasu.zip ({len(files)} package files)")
+    print(f"Verified Garasu.exe and Garasu.zip ({len(files)} package files)")
 
 
 if __name__ == "__main__":

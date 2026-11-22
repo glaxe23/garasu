@@ -23,7 +23,7 @@
 
 Нужны Windows 11 и интернет.
 
-1. Скачай `Garasu-Setup.exe` со страницы [Releases](../../releases) и запусти.
+1. Скачай `Garasu.exe` со страницы [Releases](../../releases) и запусти.
 2. Если Windows покажет синее окно «Система Windows защитила ваш компьютер», нажми «Подробнее» → «Выполнить в любом случае» (файл не подписан).
 3. Нажми «Установить» и подожди 5–10 минут. На вопросы Windows об установке программ отвечай «Да».
 
@@ -90,4 +90,4 @@ files/
 
 ---
 
-**English.** Garasu is a glass-styled desktop for Windows 11: tiling windows (GlazeWM), a pill bar and dock (YASB), draggable desktop widgets (Zebar), wallpaper-based themes and three modes (daily, work, game). Inspired by the Linux desktop [Ryoku](https://ryoku.dev); not affiliated with it. Download `Garasu-Setup.exe` from Releases and click Install. The interface is in Russian.
+**English.** Garasu is a glass-styled desktop for Windows 11: tiling windows (GlazeWM), a pill bar and dock (YASB), draggable desktop widgets (Zebar), wallpaper-based themes and three modes (daily, work, game). Inspired by the Linux desktop [Ryoku](https://ryoku.dev); not affiliated with it. Download `Garasu.exe` from Releases and click Install. The interface is in Russian.

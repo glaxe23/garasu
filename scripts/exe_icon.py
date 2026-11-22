@@ -1,34 +1,11 @@
-"""Значок для Garasu-Setup.exe: рисует 硝 на тёмной плитке и вставляет в готовый exe вместо стандартного.
-
-  set_icon(exe, ico)  - нарисовать ico-файл и заменить значок в exe; возвращает строку для отчёта сборки"""
-import os, struct, ctypes
+"""Встраивает значок установщика Garasu в ресурсы Windows EXE."""
+import struct, ctypes
 from ctypes import wintypes
 
 RT_ICON, RT_GROUP_ICON = 3, 14
 
 
-def draw(ico):
-    from PIL import Image, ImageDraw, ImageFont
-    S = 256
-    im = Image.new("RGBA", (S, S), (0, 0, 0, 0))
-    d = ImageDraw.Draw(im)
-    d.rounded_rectangle((8, 8, S - 8, S - 8), 56, fill=(18, 20, 28, 255), outline=(238, 183, 208, 255), width=6)
-    font = None
-    for name in ("YuGothB.ttc", "msyhbd.ttc", "msgothic.ttc", "simsun.ttc"):
-        p = os.path.join(os.environ.get("WINDIR", r"C:\Windows"), "Fonts", name)
-        if os.path.exists(p):
-            font = ImageFont.truetype(p, 150)
-            break
-    if font:
-        box = d.textbbox((0, 0), "硝", font=font)
-        d.text(((S - box[2] - box[0]) / 2, (S - box[3] - box[1]) / 2), "硝", font=font, fill=(238, 183, 208, 255))
-    else:
-        d.ellipse((76, 76, 180, 180), fill=(238, 183, 208, 255))
-    im.save(ico, sizes=[(16, 16), (24, 24), (32, 32), (48, 48), (64, 64), (256, 256)])
-
-
 def set_icon(exe, ico):
-    draw(ico)
     raw = open(ico, "rb").read()
     _, _, count = struct.unpack_from("<HHH", raw, 0)
     entries = [struct.unpack_from("<BBBBHHII", raw, 6 + 16 * i) for i in range(count)]
