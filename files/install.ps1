@@ -441,7 +441,11 @@ function Install {
         $bar.Value = [Math]::Min(88, $bar.Value + 2); Pump
     }
     $themeArg = $null
-    if ($got.Count) { $themeArg = $got[0].id }
+    if ($got.Count) {
+        $themeArg = $got[0].id
+        # живые обои идут в комплекте и включаются сразу; им нужен Qt, без него остаётся обычная тема
+        if ($script:qtOk -and @($got | Where-Object { $_.id -eq 'dream' }).Count) { $themeArg = 'dream' }
+    }
     else {
         # обоев нет: рисуем свои, чтобы установка всё равно закончилась. Скачать остальные можно повторным запуском.
         Say '   обои не скачались (GitHub недоступен): ставлю запасные, остальные можно докачать повторной установкой' $mut
@@ -463,7 +467,15 @@ function Install {
     } else { Remove-Item -LiteralPath "$dst\theme\classic.on" -Force -ErrorAction SilentlyContinue }
     if ((Run $vpy "`"$dst\theme\widgets.py`" install") -ne 0) { Bad 'Не удалось подготовить виджеты.' }
     if ($themeArg) {
-        if ((Run $vpy "`"$dst\theme\ryoku.py`" $themeArg") -eq 0) { Ok 'тема применена' } else { Bad 'Тема не применилась.' }
+        $themeOk = (Run $vpy "`"$dst\theme\ryoku.py`" $themeArg") -eq 0
+        if (-not $themeOk -and $themeArg -eq 'dream') {            # видео не открылось: ставим обычную тему, установка не должна падать
+            $still = @($got | Where-Object { $_.id -ne 'dream' })
+            if ($still.Count) {
+                Say '   живые обои не запустились, ставлю обычную тему' $mut
+                $themeOk = (Run $vpy "`"$dst\theme\ryoku.py`" $($still[0].id)") -eq 0
+            }
+        }
+        if ($themeOk) { Ok 'тема применена' } else { Bad 'Тема не применилась.' }
     }
     # мод Проводника из каталога Windhawk; цвета под тему ему потом пишет ryoku.py (через explorer_style.py)
     if ($script:glass) {

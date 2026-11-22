@@ -38,5 +38,10 @@
   "id": "angel",
   "name": "Ангел: золотой час",
   "wallpaper": "Angel1.png"
+ },
+ {
+  "id": "dream",
+  "name": "Dream Chaser: живые обои",
+  "wallpaper": "../theme/live/dream-chaser.mp4"
  }
 ]

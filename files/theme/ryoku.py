@@ -66,7 +66,7 @@ def pick(arg):
         t = themes[ids.index(arg)]
         w = t["wallpaper"]
         if not os.path.isabs(w):
-            w = os.path.join(root, "wallpapers", w)
+            w = os.path.normpath(os.path.join(root, "wallpapers", w))    # видео из комплекта лежит в theme\live
         return t["id"], t["name"], w
     if os.path.exists(arg):
         return "custom", os.path.basename(arg), os.path.abspath(arg)
