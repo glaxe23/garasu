@@ -16,6 +16,7 @@
 """
 import os, sys, json, time, ctypes, zlib, subprocess
 from ctypes import wintypes as wt
+import wallpaper_engine
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 CONF = os.path.join(HERE, "gifwall.json")
@@ -428,10 +429,18 @@ class Player:
         self.play_t.start(self.delays[self.cur])
 
     def check(self):
-        self.poll_opt()
         p = conf()
         if p is None:
             self.stop_opt(); self.clear(); self.app.quit(); return
+        if wallpaper_engine.is_running():
+            if self.host or self.opt:
+                self.stop_opt()
+                self.clear()
+                self.host = None
+                self.paused = False
+                log("Wallpaper Engine запущен — живые обои Garasu ждут его закрытия")
+            return
+        self.poll_opt()
         try:
             mt = os.path.getmtime(p)
         except OSError:

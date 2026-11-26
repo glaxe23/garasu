@@ -23,7 +23,7 @@ from PIL import Image, ImageTk, ImageDraw, ImageOps
 
 here = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, here)
-import glass, ui
+import glass, ui, wallpaper_engine
 from carousel import Carousel
 root_dir = os.path.dirname(here)
 thumbs = os.path.join(here, "thumbs")
@@ -92,6 +92,22 @@ H = PAD + 40 + CAR_H + 44 + PAD + 126        # шапка, карусель, п�
 sw = win.winfo_screenwidth()
 win.geometry("%dx%d+%d+%d" % (W, H, sw - W - 12, 50))
 
+engine_notice = tk.Label(
+    win, text="Чтобы увидеть обои Garasu, выйди из Wallpaper Engine через значок у часов.",
+    font=(FONT, 9), anchor="w",
+)
+
+
+def refresh_engine_notice():
+    running = wallpaper_engine.is_running()
+    if running != bool(engine_notice.place_info()):
+        win.geometry(f"{W}x{H + 32 if running else H}")
+        if running:
+            engine_notice.place(x=PAD, y=H, width=W - PAD * 2, height=24)
+        else:
+            engine_notice.place_forget()
+    win.after(1500, refresh_engine_notice)
+
 cells, imgs = [], {}
 head = tk.Frame(win)
 head.place(x=PAD, y=PAD - 4, width=W - PAD * 2, height=36)
@@ -146,7 +162,7 @@ def show_name(i):
     cur = t["id"] == c.get("id")
     cap_name.configure(text=t["name"].split(":")[0], fg=c["accent"] if cur else c["fg"])
     sub = t["name"].split(":", 1)[1].strip() if ":" in t["name"] else t["id"]
-    cap_sub.configure(text=sub + ("  ·  сейчас стоит" if cur else "  ·  клик по картинке — применить"))
+    cap_sub.configure(text=sub + ("  ·  клик по картинке — переприменить" if cur else "  ·  клик по картинке — применить"))
 
 
 def spin(k):
@@ -362,6 +378,7 @@ def paint():
     kanji.configure(bg=bg, fg=c["accent"])
     title.configure(bg=bg, fg=c["fg"])
     hint.configure(bg=bg, fg=c["muted"], text=c.get("name", ""))
+    engine_notice.configure(bg=bg, fg=c["accent"])
     close.configure(bg=bg, fg=c["muted"])
     gear.configure(bg=bg, fg=c["accent"])
     gk = dict(bg=bg, fg=c["fg"], accent=c["accent"], muted=c["muted"])
@@ -408,8 +425,6 @@ def fade(a0, a1, ms, then=None):
 
 def apply(t):
     """Тема меняется красиво: панель приглушается, пока ставятся обои и цвета, и проявляется уже в новых."""
-    if t["id"] == colors().get("id"):
-        return
     hint.configure(text="применяю…")
 
     def run():
@@ -432,6 +447,7 @@ def on_focus_out(e):
 
 
 paint()
+refresh_engine_notice()
 win.update_idletasks()
 try:   # скруглённые углы и тёмная рамка окна (Windows 11)
     hwnd = wintypes.HWND(u.GetParent(win.winfo_id()) or win.winfo_id())

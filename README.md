@@ -15,6 +15,7 @@
 - **Виджеты двигаются мышкой.** Клик выделяет виджет: тащи, чтобы перенести, тяни за уголок, чтобы изменить размер. Есть привязка к краям и другим виджетам.
 - **Темы из обоев.** Цвета панели, рамок окон и виджетов считаются из картинки. Своя картинка тоже подходит.
 - **Живые обои.** GIF и видео (MP4, WebM, MKV, MOV) играют под значками рабочего стола без звука и встают на паузу, когда стол закрыт окнами. Тяжёлое видео (например, 4K 60 кадров/с) один раз пересжимается под монитор встроенным кодером Windows и потом почти не нагружает компьютер.
+- **Wallpaper Engine.** Пока он запущен, Garasu освобождает слой живых обоев. Чтобы увидеть фон Garasu, выйди из Wallpaper Engine через значок у часов. Если после выхода осталась старая картинка, нажми на текущую тему в панели «Темы», чтобы применить её ещё раз.
 - **Матовое стекло.** Под карточками виджетов размытые обои, как у настоящего стекла.
 - **Три режима.** Повседневный, рабочий (задачи, календарь, таймер) и игровой (виджеты закрыты, питание на максимум). Игровой включается сам при запуске игры из Steam.
 - **Микшер громкости** по приложениям и **календарь с заметками** по клику на часы.
@@ -23,13 +24,11 @@
 
 Нужны Windows 11 и интернет.
 
-1. Скачай `Garasu.exe` со страницы [Releases](../../releases) и запусти.
-2. Если Windows покажет синее окно «Система Windows защитила ваш компьютер», нажми «Подробнее» → «Выполнить в любом случае» (файл не подписан).
-3. Нажми «Установить» и подожди 5–10 минут. На вопросы Windows об установке программ отвечай «Да».
+1. Скачай `Garasu.zip` со страницы [Releases](../../releases) и распакуй его целиком.
+2. В распакованной папке запусти `Install.bat`.
+3. Нажми «Установить» и подожди 5–10 минут.
 
 Установщик сам поставит недостающие программы через winget: [GlazeWM](https://github.com/glzr-io/glazewm), [YASB](https://github.com/amnweb/yasb), [Zebar](https://github.com/glzr-io/zebar), [AutoHotkey](https://www.autohotkey.com) и Python. Файлы кладутся в `C:\garasu`, прежние настройки сохраняются в `C:\garasu\backup`.
-
-Без exe: скачай репозиторий архивом, распакуй и запусти `Установить.bat`.
 
 ### Удаление
 
@@ -90,4 +89,4 @@ files/
 
 ---
 
-**English.** Garasu is a glass-styled desktop for Windows 11: tiling windows (GlazeWM), a pill bar and dock (YASB), draggable desktop widgets (Zebar), wallpaper-based themes and three modes (daily, work, game). Inspired by the Linux desktop [Ryoku](https://ryoku.dev); not affiliated with it. Download `Garasu.exe` from Releases and click Install. The interface is in Russian.
+**English.** Garasu is a glass-styled desktop for Windows 11: tiling windows (GlazeWM), a pill bar and dock (YASB), draggable desktop widgets (Zebar), wallpaper-based themes and three modes (daily, work, game). Inspired by the Linux desktop [Ryoku](https://ryoku.dev); not affiliated with it. Download `Garasu.zip` from Releases, extract it and run `Install.bat`. The interface is in Russian.
